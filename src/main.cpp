@@ -13,6 +13,9 @@ std::atomic<bool> o_liga_camera{false};
 std::atomic<double> j_sp_velocidade{0.0};
 std::atomic<double> velocidade_atual{0.0};
 std::atomic<int> o_aceleracao{0};
+std::atomic<bool> i_encoder{false}; 
+
+BufferCompartilhado<double> buffer_distancia_coletor(200); 
 
 BufferCompartilhado<int> buffer_lidar_coletor(200);
 std::mutex mtx_camera;
@@ -21,6 +24,7 @@ std::condition_variable cv_camera;
 // 2. DECLARAÇÃO DAS FUNÇÕES EXTERNAS (Implementadas nos outros arquivos)
 void tarefa_reconstrucao_teto();
 void tarefa_controle_navegacao();
+void tarefa_odometria();
 
 // 3. TAREFAS LOCAIS (Para o teste)
 void tarefa_inspecao_camera() {
@@ -56,6 +60,7 @@ int main() {
     // Instancia todas as threads
     std::thread t_lidar(tarefa_reconstrucao_teto);
     std::thread t_controle(tarefa_controle_navegacao); // Adicionamos o PID aqui!
+    std::thread t_odometria(tarefa_odometria);
     std::thread t_camera(tarefa_inspecao_camera);
     std::thread t_mundo(tarefa_mock_mundo);
 
@@ -64,6 +69,7 @@ int main() {
     t_lidar.detach();
     t_controle.detach();
     t_camera.detach();
+    t_odometria.detach();
 
     std::cout << "--- TESTE FINALIZADO ---\n";
     return 0;
