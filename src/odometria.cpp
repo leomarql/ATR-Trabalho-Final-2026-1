@@ -6,7 +6,7 @@
 
 extern std::atomic<bool> i_encoder;
 extern std::atomic<double> velocidade_atual;
-extern BufferCompartilhado<double> buffer_distancia_coletor; // Note: alterado para double para precisão
+extern BufferCompartilhado<double> buffer_distancia_coletor; // double para precisão
 
 void tarefa_odometria() {
     const auto periodo = std::chrono::milliseconds(20); // Loop estritamente a cada 20ms
