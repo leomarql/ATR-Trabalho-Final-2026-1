@@ -17,7 +17,10 @@ std::atomic<bool> i_encoder{false};
 
 BufferCompartilhado<double> buffer_distancia_coletor(200); 
 
+// Nossos dois buffers oficiais
 BufferCompartilhado<int> buffer_lidar_coletor(200);
+BufferCompartilhado<double> buffer_distancia_coletor(200); 
+
 std::mutex mtx_camera;
 std::condition_variable cv_camera;
 
@@ -54,6 +57,8 @@ void tarefa_mock_mundo() {
     std::this_thread::sleep_for(std::chrono::seconds(2));
 }
 
+extern void tarefa_coletor_dados(); // Prototipo da função do coletor (Implementada em coletor.cpp)
+
 int main() {
     std::cout << "--- INICIANDO SISTEMA MULTITAREFA ---\n\n";
 
@@ -63,9 +68,13 @@ int main() {
     std::thread t_odometria(tarefa_odometria);
     std::thread t_camera(tarefa_inspecao_camera);
     std::thread t_mundo(tarefa_mock_mundo);
-
+    std::thread t_coletor(tarefa_coletor_dados);
+    
+    // O mock (Mundo) dita o tempo de vida do programa no nosso teste
     t_mundo.join();
 
+    // As threads infinitas rodam soltas em background 
+    t_coletor.detach();
     t_lidar.detach();
     t_controle.detach();
     t_camera.detach();
