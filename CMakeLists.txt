@@ -1,22 +1,32 @@
 cmake_minimum_required(VERSION 3.10)
-project(RoboInspecaoTunel VERSION 1.0)
+project(RoboInspecao VERSION 1.0)
 
-# Exigir C++17 para recursos modernos de concorrência
+# Exige o padrão C++17 (Requisito do trabalho)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-# Encontrar a biblioteca de Threads do Linux (pthreads)
+# Procura as bibliotecas de Threads e do Boost no sistema (WSL)
 find_package(Threads REQUIRED)
+find_package(Boost REQUIRED COMPONENTS system)
 
-# Incluir a pasta de headers (onde está nosso BufferCompartilhado.hpp)
-include_directories(include)
+# Define onde estão os arquivos de cabeçalho (ex: BufferCompartilhado.hpp)
+include_directories(include ${Boost_INCLUDE_DIRS})
 
-# Adicionar todos os arquivos fonte da pasta src (nosso main.cpp)
-file(GLOB SOURCES "src/*.cpp")
+# ---> A LINHA QUE VOCÊ DEVE ALTERAR <---
+# Adiciona TODOS os arquivos .cpp para serem compilados juntos em um único executável
+add_executable(robo_embarcado 
+    src/main.cpp 
+    src/odometria.cpp 
+    src/controle.cpp 
+    src/lidar.cpp 
+    src/coletor.cpp
+    src/comando.cpp
+    src/camera.cpp
+    src/mock.cpp
+    
+)
 
-# Criar o executável
-add_executable(robo_embarcado ${SOURCES})
+add_executable(testes src/test_buffer.cpp)
 
-# Linkar as bibliotecas de threads
-target_link_libraries(robo_embarcado PRIVATE Threads::Threads)
-
+# Linka o executável com as bibliotecas do Linux e do Boost
+target_link_libraries(robo_embarcado PRIVATE Threads::Threads Boost::system)

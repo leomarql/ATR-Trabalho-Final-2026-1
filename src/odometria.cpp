@@ -1,48 +1,49 @@
+/* 
+Odometria.cpp - Cálculo de Distância e Velocidade a partir do Encoder
+O que faz: Roda assincronamente a cada 20ms. 
+Lê o sensor do encoder detectando a borda de subida (transição de falso para verdadeiro). 
+A cada pulso, incrementa a distância percorrida, calcula a velocidade cinemática atual 
+e abastece o controlador PID e o Coletor de Dados.
+*/
+
 #include <iostream>
-#include <thread>
 #include <chrono>
 #include <atomic>
+#include <boost/asio.hpp>
 #include "BufferCompartilhado.hpp"
 
+// Variáveis Globais (Vêm do main.cpp)
 extern std::atomic<bool> i_encoder;
 extern std::atomic<double> velocidade_atual;
-extern BufferCompartilhado<double> buffer_distancia_coletor; // double para precisão
+extern BufferCompartilhado<double> buffer_distancia_coletor;
 
-void tarefa_odometria() {
-    const auto periodo = std::chrono::milliseconds(20); // Loop estritamente a cada 20ms
-    auto proximo_ciclo = std::chrono::steady_clock::now() + periodo;
-    
-    bool estado_anterior = false;
-    double distancia_total = 0.0;
-    
-    // Para o cálculo da velocidade v = delta_s / delta_t
-    // delta_t é o período do loop (0.02s)
-    const double dt = 0.02; 
+void callback_odometria(boost::asio::steady_timer& timer) {
+    // Variáveis estáticas mantêm o valor entre os ciclos
+    static bool estado_anterior_encoder = false;
+    static double distancia_total = 0.0;
+    static double distancia_anterior = 0.0;
+    const double dt = 0.020; // 20ms
 
-    while(true) {
-        bool estado_atual = i_encoder.load();
-        double delta_s = 0.0;
+    bool estado_atual_encoder = i_encoder.load();
 
-        // 1 & 2. Detecção de Borda (0 -> 1 ou false -> true)
-        // O encoder gera troca de estado a cada metro [cite: 89, 119]
-        if (estado_anterior == false && estado_atual == true) {
-            delta_s = 1.0; // Andou 1 metro
-            distancia_total += delta_s;
-            // std::cout << "[ODOMETRIA] +1 metro detectado! Total: " << distancia_total << "m\n";
-        }
-        estado_anterior = estado_atual;
-
-        // 3. Matemática da Velocidade (v = ds / dt)
-        // Salva na variável global para o PID usar 
-        double v = delta_s / dt;
-        velocidade_atual.store(v);
-
-        // 4. Envio de Dados
-        // Envia a distância acumulada para o buffer do coletor [cite: 90, 94]
-        buffer_distancia_coletor.push(distancia_total);
-
-        // Mantém o determinismo temporal
-        std::this_thread::sleep_until(proximo_ciclo);
-        proximo_ciclo += periodo;
+    // Detecção de Borda de Subida (0 -> 1)
+    if (estado_anterior_encoder == false && estado_atual_encoder == true) {
+        distancia_total += 1.0; // Andou 1 metro
     }
+
+    // Cálculo da Velocidade Instantânea
+    double velocidade = (distancia_total - distancia_anterior) / dt;
+    velocidade_atual.store(velocidade);
+    
+    // Envio para o Coletor
+    buffer_distancia_coletor.push(distancia_total);
+
+    estado_anterior_encoder = estado_atual_encoder;
+    distancia_anterior = distancia_total;
+
+    // Agendamento Assíncrono para o próximo ciclo
+    timer.expires_at(timer.expiry() + std::chrono::milliseconds(20));
+    timer.async_wait([&timer](const boost::system::error_code& erro) {
+        if (!erro) callback_odometria(timer);
+    });
 }

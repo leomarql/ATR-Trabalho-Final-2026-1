@@ -1,62 +1,85 @@
+/*
+buffer_compartilhado.hpp - Implementação de um buffer thread-safe para comunicação entre o LIDAR e a câmera.
+O que faz: Esta classe BufferCompartilhado é um wrapper em torno de uma fila padrão, protegida por mutexes e condicionais para garantir a segurança em ambientes multithread. 
+Ela suporta operações de push e pop, com uma política de descarte FIFO quando a capacidade máxima é atingida. 
+Além disso, inclui um método try_pop para evitar bloqueios desnecessários e um mecanismo de fechamento seguro para encerrar consumidores de forma elegante.
+*/
+
 #pragma once
 
 #include <queue>
 #include <mutex>
 #include <condition_variable>
-#include <iostream>
+#include <optional>
+#include <atomic>
 
-// Usamos template para que o buffer sirva tanto para inteiros (Lidar) 
-// quanto para structs mais complexas no futuro
 template <typename T>
 class BufferCompartilhado {
 private:
     std::queue<T> fila;
     std::mutex mtx;
     std::condition_variable cv;
-    size_t tamanho_maximo;
+    size_t capacidade_maxima;
+    
+    // Novas variáveis para desligamento seguro e métricas
+    bool fechado = false;
+    std::atomic<int> descartes{0}; 
 
 public:
-    // Construtor: define um limite para a fila não estourar a RAM
-    BufferCompartilhado(size_t max = 100) : tamanho_maximo(max) {}
+    explicit BufferCompartilhado(size_t max_size = 200) : capacidade_maxima(max_size) {}
 
-    // Produtor: insere um novo dado na fila
-    void push(T item) {
-        // Bloqueia o acesso exclusivo a esta região crítica
-        std::unique_lock<std::mutex> lock(mtx);
-        
-        // Política de tempo real: se encher, descartamos a leitura mais antiga.
-        // Em robótica, o dado novo do sensor é sempre mais importante que o velho.
-        if (fila.size() >= tamanho_maximo) {
-            fila.pop(); 
+    void push(T dado) {
+        std::lock_guard<std::mutex> lock(mtx);
+        if (fila.size() >= capacidade_maxima) {
+            fila.pop(); // Política FIFO: descarta o mais antigo
+            descartes++; // Incrementa o contador de perdas
         }
-        
-        fila.push(item);
-        
-        // Libera o cadeado ANTES de notificar, para ser mais eficiente
-        lock.unlock(); 
-        
-        // Acorda uma thread (consumidor) que esteja dormindo esperando dados
-        cv.notify_one(); 
+        fila.push(dado);
+        cv.notify_one();
     }
 
-    // Consumidor: retira o dado mais antigo da fila
-    T pop() {
+    // O C++17 std::optional permite retornar o dado OU retornar "vazio" (nullopt)
+    std::optional<T> pop() {
         std::unique_lock<std::mutex> lock(mtx);
         
-        // O pulo do gato: se a fila estiver vazia, a thread dorme AQUI.
-        // Ela não gasta CPU num loop infinito ("busy wait").
-        // Ela só acorda quando o cv.notify_one() for chamado no push().
-        cv.wait(lock, [this]() { return !fila.empty(); });
+        // Dorme até ter algo na fila OU o buffer ser fechado
+        cv.wait(lock, [this]() { return !fila.empty() || fechado; });
         
-        T item = fila.front();
+        // Se acordou, está vazio e foi fechado, encerra de forma elegante
+        if (fila.empty() && fechado) {
+            return std::nullopt; 
+        }
+
+        T dado = fila.front();
         fila.pop();
-        
-        return item;
+        return dado;
     }
-    
-    // Função utilitária para debug e logs
+
+    // Tenta puxar um dado sem bloquear a thread.
+    // Resolve a vulnerabilidade TOCTOU (Time-Of-Check to Time-Of-Use)
+    std::optional<T> try_pop() {
+        std::lock_guard<std::mutex> lock(mtx); // Tranca a fila
+        if (fila.empty()) {
+            return std::nullopt; // Retorna vazio imediatamente se não tiver nada
+        }
+        T dado = fila.front();
+        fila.pop();
+        return dado;
+    }
+
     size_t size() {
         std::lock_guard<std::mutex> lock(mtx);
         return fila.size();
+    }
+
+    // Método profissional para encerrar consumidores
+    void close() {
+        std::lock_guard<std::mutex> lock(mtx);
+        fechado = true;
+        cv.notify_all(); // Acorda todo mundo que estava travado no pop()
+    }
+
+    int get_descartes() const {
+        return descartes.load();
     }
 };

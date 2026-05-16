@@ -1,60 +1,62 @@
+/*
+coletor.cpp - Responsável por coletar os dados do Lidar e salvar no CSV
+O que faz: Esta função é executada em uma thread separada e fica bloqueada esperando por novas leituras do LIDAR. 
+Quando uma nova leitura chega, ela esvazia a fila de distâncias para pegar a posição mais recente, e então salva um 
+registro no arquivo CSV com o timestamp, posição, leitura do teto e a confiança atual. 
+O arquivo é aberto em modo append para garantir que os dados sejam preservados entre execuções e o cabeçalho é escrito apenas se o arquivo estiver vazio. 
+*/
+
 #include <iostream>
 #include <fstream>
 #include <chrono>
-#include <thread>
 #include <iomanip>
+#include <atomic>
 #include "BufferCompartilhado.hpp"
 
-// 1. declaração extern: Puxando os buffers que vão nascer no main
 extern BufferCompartilhado<int> buffer_lidar_coletor;
 extern BufferCompartilhado<double> buffer_distancia_coletor;
+extern std::atomic<int> confianca_atual; 
+extern std::atomic<bool> executando;
 
 void tarefa_coletor_dados() {
-    // 2. Abertura do Arquivo de Log no modo "Append" (adiciona ao final)
-    // Usamos arquivo local na pasta de execução
-    std::ofstream arquivo_log("log_inspecao.csv", std::ios::app);
-
-    // Se o arquivo abriu corretamente, escrevemos o cabeçalho
-    if (arquivo_log.is_open()) {
-        arquivo_log << "Timestamp_ms,Posicao_X_m,Leitura_Teto_cm,Confianca_%\n";
-    } else {
-        std::cerr << "[COLETOR] Erro critico: Nao foi possivel criar log_inspecao.csv\n";
-        return; // Mata a thread se não puder gravar
+    std::ofstream arquivo_log;
+    arquivo_log.open("log_inspecao.csv", std::ios::app);
+    arquivo_log.seekp(0, std::ios::end); 
+    if (arquivo_log.tellp() == 0) { 
+        arquivo_log << "Timestamp_ms,Posicao_X_m,Posicao_Y_m,Leitura_Teto_cm,Confianca_%\n";
     }
 
-    double posicao_atual_x = 0.0;
+    static double ultima_posicao_x = 0.0;
 
-    while(true) {
-        // 3. Ponto chave: A thread dorme aqui 
-        // Ela só acorda quando o Lidar colocar um dado novo (a cada 100ms)
-        int leitura_teto = buffer_lidar_coletor.pop();
+    while (executando.load()) {
+        
+        // Bloqueia esperando o Lidar bater o bumbo
+        auto leitura_opt = buffer_lidar_coletor.pop();
+        if (!leitura_opt.has_value()) break; 
 
-        // 4. Sincronização de Frequências (Lidar vs Odometria)
-        // Esvazia o buffer de distância para pegar sempre a posição MAIS RECENTE
-        int amostras_posicao = 0;
-        while(buffer_distancia_coletor.size() > 0) {
-            posicao_atual_x = buffer_distancia_coletor.pop();
-            amostras_posicao++;
+        int leitura_teto = leitura_opt.value();
+
+        // NOVO: Esvaziamento (Drain) blindado contra corridas de dados!
+        // Tenta puxar até a fila esvaziar, sem bloquear a thread do coletor.
+        while (true) {
+            auto pos_opt = buffer_distancia_coletor.try_pop();
+            if (!pos_opt.has_value()) {
+                break; // Fila vazia, sai do loop de esvaziamento
+            }
+            ultima_posicao_x = pos_opt.value(); // Atualiza com o valor mais recente
         }
 
-        // 5. Cálculo do Nível de Confiança (Regra exigida no PDF)
-        // "Quanto mais medições próximas, maior o nível de confiança"
-        // Se a odometria mandou várias amostras no intervalo, a confiança é alta.
-        int confianca = 100;
-        if (amostras_posicao < 3) confianca = 50; 
-        if (amostras_posicao == 0) confianca = 10; 
+        int confianca = confianca_atual.load(); 
 
-        // 6. Geração do Timestamp preciso
         auto agora = std::chrono::system_clock::now();
         auto tempo_ms = std::chrono::duration_cast<std::chrono::milliseconds>(agora.time_since_epoch()).count();
 
-        // 7. Gravação em Disco (I/O)
         arquivo_log << tempo_ms << ","
-                    << std::fixed << std::setprecision(2) << posicao_atual_x << ","
+                    << std::fixed << std::setprecision(2) << ultima_posicao_x << ","
+                    << std::fixed << std::setprecision(2) << 0.00 << ","
                     << leitura_teto << ","
                     << confianca << "\n";
-
-        // Força a gravação imediata no disco (evita perda de dados se o robô desligar do nada)
+                    
         arquivo_log.flush();
     }
 }
