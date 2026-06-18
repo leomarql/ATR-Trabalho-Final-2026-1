@@ -11,6 +11,10 @@ O arquivo é aberto em modo append para garantir que os dados sejam preservados 
 #include <chrono>
 #include <iomanip>
 #include <atomic>
+#include <deque>
+#include <algorithm>
+#include <cmath>
+#include <utility>
 #include "BufferCompartilhado.hpp"
 
 extern BufferCompartilhado<int> buffer_lidar_coletor;
@@ -23,7 +27,7 @@ void tarefa_coletor_dados() {
     arquivo_log.open("log_inspecao.csv", std::ios::app);
     arquivo_log.seekp(0, std::ios::end); 
     if (arquivo_log.tellp() == 0) { 
-        arquivo_log << "Timestamp_ms,Posicao_X_m,Posicao_Y_m,Leitura_Teto_cm,Confianca_%\n";
+        arquivo_log << "Timestamp_ms,Posicao_X_m,Posicao_Y_cm,Confianca_%\n";;
     }
 
     static double ultima_posicao_x = 0.0;
@@ -46,16 +50,39 @@ void tarefa_coletor_dados() {
             ultima_posicao_x = pos_opt.value(); // Atualiza com o valor mais recente
         }
 
-        int confianca = confianca_atual.load(); 
+        // --- Confiança por DENSIDADE de medições (online, no coletor) ---
+        // Quanto mais pontos (x,y) já registrados perto do ponto atual, maior a confiança.
+        static std::deque<std::pair<double,double>> historico_pontos;
+        const size_t MAX_HIST = 50;   // janela de pontos considerados
+        const double RAIO_X = 1.5;    // metros
+        const double RAIO_Y = 15.0;   // cm
+
+        double x_atual = ultima_posicao_x;
+        double y_atual = static_cast<double>(leitura_teto);
+
+        int vizinhos = 0;
+        for (const auto& p : historico_pontos) {
+            if (std::abs(p.first  - x_atual) <= RAIO_X &&
+                std::abs(p.second - y_atual) <= RAIO_Y) {
+                vizinhos++;
+            }
+        }
+
+        int confianca = std::min(100, (vizinhos * 100) / static_cast<int>(MAX_HIST));
+
+        historico_pontos.push_back({x_atual, y_atual});
+        if (historico_pontos.size() > MAX_HIST) historico_pontos.pop_front();
+
+        // Reutiliza o atômico para a telemetria da Etapa 2 ler depois
+        confianca_atual.store(confianca);
 
         auto agora = std::chrono::system_clock::now();
         auto tempo_ms = std::chrono::duration_cast<std::chrono::milliseconds>(agora.time_since_epoch()).count();
 
         arquivo_log << tempo_ms << ","
-                    << std::fixed << std::setprecision(2) << ultima_posicao_x << ","
-                    << std::fixed << std::setprecision(2) << 0.00 << ","
-                    << leitura_teto << ","
-                    << confianca << "\n";
+            << std::fixed << std::setprecision(2) << ultima_posicao_x << ","
+            << leitura_teto << ","
+            << confianca << "\n";
                     
         arquivo_log.flush();
     }

@@ -22,6 +22,8 @@ extern BufferCompartilhado<int> buffer_lidar_coletor;
 extern std::mutex mtx_camera;
 extern std::condition_variable cv_camera;
 extern std::atomic<int> confianca_atual;
+extern std::atomic<int> limiar_anomalia;
+extern std::atomic<bool> o_liga_camera;
 
 void callback_reconstrucao_teto(boost::asio::steady_timer& timer) {
     static int historico[5] = {200, 200, 200, 200, 200};
@@ -40,26 +42,19 @@ void callback_reconstrucao_teto(boost::asio::steady_timer& timer) {
     for(int i = 0; i < 5; i++) soma += historico[i];
     int media_movel = soma / 5;
 
-    // 2. Cálculo da Variância
-    double variancia = 0;
-    for(int i = 0; i < 5; i++) variancia += std::pow(historico[i] - media_movel, 2);
-    variancia /= 5;
-
-    if (variancia < 5.0) confianca_atual = 100;
-    else if (variancia < 50.0) confianca_atual = 50;
-    else confianca_atual = 10;
-
-    // 3. Detecção de Anomalia (A correção do Revisor!)
-    bool buraco_atual = std::abs(leitura_atual - media_movel) > 10;
+    // 3. Detecção de Anomalia 
+    bool buraco_atual = std::abs(leitura_atual - media_movel) > limiar_anomalia.load();
 
     // LÓGICA DE BORDA: Só acorda a câmera na transição de Falso -> Verdadeiro
     if (buraco_atual == true && buraco_anterior == false) {
         e_inspecao.store(true);
+        o_liga_camera.store(true); // Aciona a câmera para começar a inspecionar
         cv_camera.notify_one(); // Grita APENAS UMA VEZ no início do buraco
     } 
     // Quando o robô sair do buraco, abaixa a flag para estar pronto para o próximo
     else if (buraco_atual == false && buraco_anterior == true) {
         e_inspecao.store(false);
+        o_liga_camera.store(false); // Desliga a câmera
     }
     
     buraco_anterior = buraco_atual; // Salva o estado para o próximo ciclo (100ms)

@@ -69,3 +69,7 @@ Testing/
 .cache/
 build/
 build/
+
+# Logs de execução
+*.csv
+log_inspecao.csv

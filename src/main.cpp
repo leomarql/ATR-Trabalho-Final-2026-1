@@ -14,6 +14,8 @@ Além disso, ao final do programa, ele imprime as métricas de desempenho dos bu
 #include <mutex>
 #include <condition_variable>
 #include <boost/asio.hpp>
+#include <string>
+#include <csignal>
 #include "BufferCompartilhado.hpp"
 
 // Variáveis Globais
@@ -25,6 +27,8 @@ std::atomic<double> velocidade_atual{0.0};
 std::atomic<int> o_aceleracao{0};
 std::atomic<int> i_lidar{200}; 
 std::atomic<bool> e_inspecao{false};
+std::atomic<int> limiar_anomalia{10};    // item 3 - configurável pela Operação Remota
+std::atomic<bool> o_liga_camera{false};  // item 4 - atuador da câmera (Tabela 1)
 
 std::atomic<int> confianca_atual{100};
 std::mutex mtx_camera;
@@ -42,7 +46,17 @@ extern void tarefa_inspecao_camera();
 extern void tarefa_coletor_dados(); // Nova declaração da thread
 extern void tarefa_mock_mundo();
 
-int main() {
+void handler_sinal(int) { //  handler de sinal para o modo online encerrar com Ctrl+C
+    executando.store(false);
+}
+
+int main(int argc, char* argv[]) {
+    bool modo_online = false;
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "--online") modo_online = true;
+    }
+    std::signal(SIGINT, handler_sinal);
+
     boost::asio::io_context io;
 
     boost::asio::steady_timer timer_odometria(io, std::chrono::milliseconds(20));
@@ -55,10 +69,14 @@ int main() {
     timer_lidar.async_wait([&](const boost::system::error_code& e){ callback_reconstrucao_teto(timer_lidar); });
     timer_comando.async_wait([&](const boost::system::error_code& e){ callback_comando_navegacao(timer_comando); });
 
-    // Instancia as Tarefas Consumidoras Puras
+    // Threads do Consumidor 
     std::thread t_camera(tarefa_inspecao_camera);
     std::thread t_coletor(tarefa_coletor_dados);
-    std::thread t_mundo(tarefa_mock_mundo);
+
+    std::thread t_mundo;
+    if (!modo_online) {
+        t_mundo = std::thread(tarefa_mock_mundo);
+    }
 
     // Threads do Produtor RT (Asio)
     std::vector<std::thread> thread_pool;
@@ -66,7 +84,14 @@ int main() {
         thread_pool.emplace_back([&io](){ io.run(); });
     }
 
-    t_mundo.join(); 
+    if (!modo_online) { // Modo Offline: roda o mundo simulado e depois encerra
+        t_mundo.join();
+    } else { // Modo Online: espera o usuário encerrar com Ctrl+C, mantendo o sistema rodando
+        std::cout << "--- MODO ONLINE: aguardando simulador/MQTT. Ctrl+C para encerrar. ---\n";
+        while (executando.load()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    }
 
     // --- GRACEFUL SHUTDOWN ---
     std::cout << "--- DESLIGANDO O SISTEMA... ---\n";
