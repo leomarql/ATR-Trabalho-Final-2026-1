@@ -1,10 +1,10 @@
 /* 
 Odometria.cpp - Cálculo de Distância e Velocidade a partir do Encoder
 O que faz: Roda assincronamente a cada 20ms. 
-Lê o sensor do encoder detectando a borda de subida (transição de falso para verdadeiro). 
-A cada pulso, incrementa a distância percorrida, calcula a velocidade cinemática atual 
-e abastece o controlador PID e o Coletor de Dados. Também expõe a posição X atual
-(posicao_x) para a telemetria MQTT poder publicá-la.
+Lê o sensor do encoder e, conforme o enunciado, conta 1 metro percorrido a CADA
+troca de estado do encoder (0->1 ou 1->0). A cada metro, atualiza a distância,
+calcula a velocidade cinemática atual, abastece o controlador PID e o Coletor,
+e expõe a posição X (posicao_x) para a telemetria MQTT.
 */
 
 #include <iostream>
@@ -28,8 +28,9 @@ void callback_odometria(boost::asio::steady_timer& timer) {
 
     bool estado_atual_encoder = i_encoder.load();
 
-    // Detecção de Borda de Subida (0 -> 1)
-    if (estado_anterior_encoder == false && estado_atual_encoder == true) {
+    // Conta 1 metro a cada TROCA DE ESTADO (subida ou descida), conforme o enunciado:
+    // "o encoder gera uma troca de estado (0->1 ou 1->0) a cada metro percorrido".
+    if (estado_atual_encoder != estado_anterior_encoder) {
         distancia_total += 1.0; // Andou 1 metro
     }
 
