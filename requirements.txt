@@ -1,0 +1,13 @@
+# Dependências Python do projeto — Etapa 2
+# Instalar com: pip install -r requirements.txt
+
+# Cliente MQTT (simulador físico e operação remota)
+paho-mqtt
+
+# Animação da simulação visual do túnel
+pygame
+matplotlib
+
+# Tkinter (GUI da Operação Remota) NÃO entra aqui:
+# ele acompanha a instalação padrão do Python.
+# Se faltar no Linux: sudo apt install python3-tk
