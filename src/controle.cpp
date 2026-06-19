@@ -4,19 +4,24 @@ O que faz: Roda assincronamente a cada 80ms.
 Compara a velocidade que o robô deveria estar (j_sp_velocidade) com a velocidade calculada pela Odometria.
 Aplica as equações matemática do Controlador PID (Proporcional, Integral e Derivativo) e gera um sinal PWM 
 saturado (entre -100 e 100) para atuar nos motores via o_aceleracao.
+Mede o próprio tempo de execução (WCET) para a análise de escalonabilidade.
 */
 
 #include <iostream>
 #include <chrono>
 #include <atomic>
 #include <boost/asio.hpp>
+#include "Profiler.hpp"
 
 // Variáveis Globais (Vêm do main.cpp)
 extern std::atomic<double> j_sp_velocidade;
 extern std::atomic<double> velocidade_atual;
 extern std::atomic<int> o_aceleracao;
+extern MedidorWCET wcet_controle;   // medidor de tempo de execução
 
 void callback_controle_navegacao(boost::asio::steady_timer& timer) {
+    auto t0 = std::chrono::steady_clock::now();  // início da medição de WCET
+
     static double erro_integral = 0.0;
     static double erro_anterior = 0.0;
     
@@ -42,6 +47,8 @@ void callback_controle_navegacao(boost::asio::steady_timer& timer) {
     // 4. Escrita na saída física
     o_aceleracao.store(saida_saturada);
     erro_anterior = erro;
+
+    wcet_controle.registrar_desde(t0);  // fim da medição (antes de reagendar)
 
     // Agendamento Assíncrono para o próximo ciclo
     timer.expires_at(timer.expiry() + std::chrono::milliseconds(80));

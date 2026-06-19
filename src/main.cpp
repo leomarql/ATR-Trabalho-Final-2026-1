@@ -6,10 +6,11 @@ que os buffers compartilhados sejam fechados corretamente para evitar deadlocks.
 Suporta dois modos via linha de comando:
   --offline (padrão): roda o mock interno (tarefa_mock_mundo) que simula sensores por 5s.
   --online          : NÃO roda o mock; sobe a ponte MQTT e aguarda o simulador físico externo.
-Ao final do programa, imprime as métricas de desempenho dos buffers (descartes) para análise.
+Ao final do programa, imprime as métricas dos buffers (descartes) e os WCET medidos das tarefas.
 */
 
 #include <iostream>
+#include <iomanip>
 #include <thread>
 #include <vector>
 #include <atomic>
@@ -20,6 +21,7 @@ Ao final do programa, imprime as métricas de desempenho dos buffers (descartes)
 #include <string>
 #include <csignal>
 #include "BufferCompartilhado.hpp"
+#include "Profiler.hpp"
 
 // Variáveis Globais
 std::atomic<bool> executando{true};
@@ -40,6 +42,13 @@ std::condition_variable cv_camera;
 
 BufferCompartilhado<int> buffer_lidar_coletor(200);
 BufferCompartilhado<double> buffer_distancia_coletor(200);
+
+// Medidores de WCET (um por tarefa). Lidos pelas tarefas via 'extern'.
+MedidorWCET wcet_odometria("Odometria (T=20ms) ");
+MedidorWCET wcet_controle ("Controle  (T=80ms) ");
+MedidorWCET wcet_lidar    ("Lidar     (T=100ms)");
+MedidorWCET wcet_comando  ("Comando   (T=200ms)");
+MedidorWCET wcet_camera   ("Camera    (evento)  ");
 
 // Declarações Externas
 extern void callback_odometria(boost::asio::steady_timer& timer);
@@ -121,10 +130,26 @@ int main(int argc, char* argv[]) {
         if(t.joinable()) t.join();
     }
 
-    // Imprime as métricas exigidas pelo revisor
+    // Imprime as métricas de buffer
     std::cout << "Metricas de Buffer:\n";
     std::cout << " - Descartes Lidar: " << buffer_lidar_coletor.get_descartes() << "\n";
     std::cout << " - Descartes Odometria: " << buffer_distancia_coletor.get_descartes() << "\n";
+
+    // Imprime os WCET medidos (base para a análise de escalonabilidade)
+    std::cout << "\nAnalise de WCET (tempos de execucao medidos):\n";
+    auto imprimir = [](const MedidorWCET& m){
+        std::cout << std::fixed << std::setprecision(1)
+                  << " - " << m.nome()
+                  << " | WCET = " << m.wcet_us()  << " us"
+                  << " | media = " << m.media_us() << " us"
+                  << " | amostras = " << m.amostras() << "\n";
+    };
+    imprimir(wcet_odometria);
+    imprimir(wcet_controle);
+    imprimir(wcet_lidar);
+    imprimir(wcet_comando);
+    imprimir(wcet_camera);
+
     std::cout << "--- SISTEMA ENCERRADO COM SEGURANCA ---\n";
     return 0;
 }

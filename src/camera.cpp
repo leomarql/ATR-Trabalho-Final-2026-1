@@ -3,6 +3,9 @@ camera.cpp - Tarefa de Inspeção por Câmera
 O que faz: Roda bloqueada esperando um gatilho do LIDAR (via Variável de Condição).
 Quando acordada, simula um processamento pesado de imagem (multiplicação de matrizes O(N^3)) para representar a carga real de CPU exigida.
 Após o processamento, libera a CPU e volta a dormir esperando o próximo gatilho.
+Mede o tempo de execução do processamento pesado (WCET) para a análise de
+escalonabilidade. OBS: esta é uma tarefa ORIENTADA A EVENTO (não periódica), em
+thread nativa dedicada — por isso não entra no conjunto periódico Rate Monotonic.
 */
 
 #include <iostream>
@@ -12,11 +15,13 @@ Após o processamento, libera a CPU e volta a dormir esperando o próximo gatilh
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include "Profiler.hpp"
 
 extern std::atomic<bool> e_inspecao;
 extern std::atomic<bool> executando;
 extern std::mutex mtx_camera;
 extern std::condition_variable cv_camera;
+extern MedidorWCET wcet_camera;   // medidor de tempo de execução
 
 void tarefa_inspecao_camera() {
     while(executando.load()) {
@@ -28,7 +33,9 @@ void tarefa_inspecao_camera() {
         if (!executando.load()) break;
 
         std::cout << "\n[CAMERA] Ativada! Iniciando processamento pesado de imagem...\n";
-        
+
+        auto t0 = std::chrono::steady_clock::now();  // início da medição de WCET
+
         // Carga Real de CPU (Multiplicação de Matrizes O(N^3))
         const int SIZE = 400; 
         std::vector<std::vector<double>> A(SIZE, std::vector<double>(SIZE, 1.001));
@@ -42,7 +49,9 @@ void tarefa_inspecao_camera() {
                 }
             }
         }
-        
+
+        wcet_camera.registrar_desde(t0);  // fim da medição do processamento pesado
+
         std::cout << "[CAMERA] Imagem processada. CPU liberada.\n";
         e_inspecao.store(false); 
     }

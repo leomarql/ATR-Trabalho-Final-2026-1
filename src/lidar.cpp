@@ -5,6 +5,7 @@ Ele utiliza uma média móvel para suavizar as leituras e implementa uma lógica
 O limiar de detecção de anomalia é configurável pela Operação Remota (variável atômica limiar_anomalia).
 Ao detectar uma anomalia, aciona o atuador da câmera (o_liga_camera) e sinaliza a tarefa de inspeção.
 Os dados processados são enviados para um buffer compartilhado, permitindo que o coletor acesse as informações de forma thread-safe.
+Mede o próprio tempo de execução (WCET) para a análise de escalonabilidade.
 */
 
 #include <iostream>
@@ -15,6 +16,7 @@ Os dados processados são enviados para um buffer compartilhado, permitindo que 
 #include <condition_variable>
 #include <boost/asio.hpp>
 #include "BufferCompartilhado.hpp"
+#include "Profiler.hpp"
 
 extern std::atomic<int> i_lidar;
 extern std::atomic<bool> e_inspecao;
@@ -23,8 +25,11 @@ extern std::mutex mtx_camera;
 extern std::condition_variable cv_camera;
 extern std::atomic<int> limiar_anomalia;   // configurável pela Operação Remota (Etapa 2)
 extern std::atomic<bool> o_liga_camera;     // atuador da câmera (Tabela 1)
+extern MedidorWCET wcet_lidar;              // medidor de tempo de execução
 
 void callback_reconstrucao_teto(boost::asio::steady_timer& timer) {
+    auto t0 = std::chrono::steady_clock::now();  // início da medição de WCET
+
     static int historico[5] = {200, 200, 200, 200, 200};
     static int indice = 0;
 
@@ -60,6 +65,8 @@ void callback_reconstrucao_teto(boost::asio::steady_timer& timer) {
 
     // 3. Envio de dados
     buffer_lidar_coletor.push(media_movel);
+
+    wcet_lidar.registrar_desde(t0);  // fim da medição (antes de reagendar)
 
     // Agendamento Assíncrono
     timer.expires_at(timer.expiry() + std::chrono::milliseconds(100));

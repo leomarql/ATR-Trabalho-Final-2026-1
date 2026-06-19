@@ -10,23 +10,30 @@ Decide o setpoint de velocidade (j_sp_velocidade) dependendo do modo de operaç�
     cada ciclo, ela apagaria o comando do operador 200ms depois.
 
 O setpoint é lido pelo controlador PID para gerar o sinal de atuação nos motores.
+Mede o próprio tempo de execução (WCET) para a análise de escalonabilidade.
 */
 
 #include <iostream>
 #include <chrono>
 #include <atomic>
 #include <boost/asio.hpp>
+#include "Profiler.hpp"
 
 // Variáveis Globais (Nascem no main.cpp)
 extern std::atomic<bool> e_automatico;
 extern std::atomic<double> j_sp_velocidade;
+extern MedidorWCET wcet_comando;   // medidor de tempo de execução
 
 void callback_comando_navegacao(boost::asio::steady_timer& timer) {
+    auto t0 = std::chrono::steady_clock::now();  // início da medição de WCET
+
     // Modo automático: define a velocidade de cruzeiro autônoma.
     // Modo manual: não toca no setpoint (controlado pelos comandos de direção via MQTT).
     if (e_automatico.load() == true) {
         j_sp_velocidade.store(5.0);
     }
+
+    wcet_comando.registrar_desde(t0);  // fim da medição (antes de reagendar)
 
     // Agenda o próximo ciclo
     timer.expires_at(timer.expiry() + std::chrono::milliseconds(200));
