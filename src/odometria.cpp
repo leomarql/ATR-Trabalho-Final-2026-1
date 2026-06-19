@@ -3,7 +3,8 @@ Odometria.cpp - Cálculo de Distância e Velocidade a partir do Encoder
 O que faz: Roda assincronamente a cada 20ms. 
 Lê o sensor do encoder detectando a borda de subida (transição de falso para verdadeiro). 
 A cada pulso, incrementa a distância percorrida, calcula a velocidade cinemática atual 
-e abastece o controlador PID e o Coletor de Dados.
+e abastece o controlador PID e o Coletor de Dados. Também expõe a posição X atual
+(posicao_x) para a telemetria MQTT poder publicá-la.
 */
 
 #include <iostream>
@@ -15,6 +16,7 @@ e abastece o controlador PID e o Coletor de Dados.
 // Variáveis Globais (Vêm do main.cpp)
 extern std::atomic<bool> i_encoder;
 extern std::atomic<double> velocidade_atual;
+extern std::atomic<double> posicao_x;   // exposta para a telemetria
 extern BufferCompartilhado<double> buffer_distancia_coletor;
 
 void callback_odometria(boost::asio::steady_timer& timer) {
@@ -34,7 +36,10 @@ void callback_odometria(boost::asio::steady_timer& timer) {
     // Cálculo da Velocidade Instantânea
     double velocidade = (distancia_total - distancia_anterior) / dt;
     velocidade_atual.store(velocidade);
-    
+
+    // Expõe a posição atual para a telemetria (lida pela bridge MQTT)
+    posicao_x.store(distancia_total);
+
     // Envio para o Coletor
     buffer_distancia_coletor.push(distancia_total);
 

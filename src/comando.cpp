@@ -1,8 +1,14 @@
 /*
 comando.cpp - Tarefa de Comando de Navegação
 O que faz: Roda assincronamente a cada 200ms.
-Decide o setpoint de velocidade (j_sp_velocidade) dependendo do modo de operação (autônomo ou manual). 
-O modo pode ser alternado a qualquer momento, e o comando de navegação se adapta imediatamente. 
+Decide o setpoint de velocidade (j_sp_velocidade) dependendo do modo de operação.
+
+  - Modo AUTOMÁTICO: a lógica autônoma define o setpoint (velocidade de cruzeiro).
+  - Modo MANUAL: NÃO sobrescreve o setpoint. Quem controla é o operador, via os
+    comandos de direção (direita/esquerda/parar) recebidos pela ponte MQTT, que
+    escrevem diretamente em j_sp_velocidade. Se esta tarefa zerasse o setpoint a
+    cada ciclo, ela apagaria o comando do operador 200ms depois.
+
 O setpoint é lido pelo controlador PID para gerar o sinal de atuação nos motores.
 */
 
@@ -16,11 +22,10 @@ extern std::atomic<bool> e_automatico;
 extern std::atomic<double> j_sp_velocidade;
 
 void callback_comando_navegacao(boost::asio::steady_timer& timer) {
-    // Define o setpoint dependendo do modo
+    // Modo automático: define a velocidade de cruzeiro autônoma.
+    // Modo manual: não toca no setpoint (controlado pelos comandos de direção via MQTT).
     if (e_automatico.load() == true) {
-        j_sp_velocidade.store(5.0); 
-    } else {
-        j_sp_velocidade.store(0.0);
+        j_sp_velocidade.store(5.0);
     }
 
     // Agenda o próximo ciclo
