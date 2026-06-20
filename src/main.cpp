@@ -27,6 +27,7 @@ Ao final do programa, imprime as métricas dos buffers (descartes) e os WCET med
 std::atomic<bool> executando{true};
 std::atomic<bool> e_automatico{true};
 std::atomic<bool> i_encoder{false};
+std::atomic<int> i_sentido{1};            // sentido do movimento: +1 avanço, -1 recuo, 0 parado
 std::atomic<double> j_sp_velocidade{5.0}; 
 std::atomic<double> velocidade_atual{0.0};
 std::atomic<int> o_aceleracao{0};
@@ -35,6 +36,7 @@ std::atomic<bool> e_inspecao{false};
 std::atomic<int> limiar_anomalia{10};    // configurável pela Operação Remota
 std::atomic<bool> o_liga_camera{false};  // atuador da câmera (Tabela 1)
 std::atomic<double> posicao_x{0.0};      // posição X exposta pela odometria p/ telemetria
+std::atomic<bool> freio_ativo{false};    // parada firme (comando "parar" da Operação Remota)
 
 std::atomic<int> confianca_atual{100};
 std::mutex mtx_camera;

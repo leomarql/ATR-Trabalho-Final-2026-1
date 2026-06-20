@@ -5,8 +5,8 @@ que a latência/jitter da rede NUNCA contamine as tarefas de tempo real (odometr
 20ms, controle 80ms, lidar 100ms).
 
 Responsabilidades (conforme contrato_api.md):
-  - ASSINA  robo/sensores  -> escreve i_encoder, i_lidar
-  - ASSINA  robo/comandos  -> escreve e_automatico, j_sp_velocidade, limiar_anomalia
+  - ASSINA  robo/sensores  -> escreve i_encoder, i_sentido, i_lidar
+  - ASSINA  robo/comandos  -> escreve e_automatico, j_sp_velocidade, limiar_anomalia, freio_ativo
   - PUBLICA robo/atuadores -> le o_aceleracao
   - PUBLICA robo/telemetria-> le posicao_x, i_lidar, confianca, velocidade, modo, etc.
 
@@ -28,6 +28,7 @@ using json = nlohmann::json;
 extern std::atomic<bool>   executando;
 extern std::atomic<bool>   e_automatico;
 extern std::atomic<bool>   i_encoder;
+extern std::atomic<int>    i_sentido;     // sentido do movimento (+1/-1/0)
 extern std::atomic<double> j_sp_velocidade;
 extern std::atomic<double> velocidade_atual;
 extern std::atomic<int>    o_aceleracao;
@@ -36,7 +37,8 @@ extern std::atomic<bool>   e_inspecao;
 extern std::atomic<int>    limiar_anomalia;
 extern std::atomic<bool>   o_liga_camera;
 extern std::atomic<int>    confianca_atual;
-extern std::atomic<double> posicao_x;   // exposto pela odometria para a telemetria
+extern std::atomic<double> posicao_x;     // exposto pela odometria para a telemetria
+extern std::atomic<bool>   freio_ativo;   // parada firme (comando "parar")
 
 // --- Configuração (deve bater com contrato_api.md) ---
 const std::string SERVIDOR         {"tcp://localhost:1883"};
@@ -76,6 +78,7 @@ public:
             // --- SENSORES (simulador -> robô) ---
             if (topico == TOPICO_SENSORES) {
                 if (j.contains("encoder")) i_encoder.store(j["encoder"].get<bool>());
+                if (j.contains("sentido")) i_sentido.store(j["sentido"].get<int>());
                 if (j.contains("lidar"))   i_lidar.store(j["lidar"].get<int>());
             }
             // --- COMANDOS (operação remota -> robô) ---
@@ -84,21 +87,36 @@ public:
 
                 if (cmd == "set_modo") {
                     std::string v = j.value("valor", std::string("auto"));
-                    e_automatico.store(v == "auto");
+                    bool em_auto = (v == "auto");
+                    e_automatico.store(em_auto);
+                    // Auto: solta o freio (lógica autônoma assume).
+                    // Manual: começa PARADO por segurança, até o operador comandar direção.
+                    freio_ativo.store(!em_auto);
                 }
                 else if (cmd == "set_velocidade") {
                     double val = j.value("valor", 5.0);
                     modulo_manual_ = val;          // guarda módulo para direita/esquerda
                     j_sp_velocidade.store(val);
+                    // Não mexe no freio: só configura a velocidade. O robô só anda
+                    // quando o operador comandar uma direção.
                 }
                 else if (cmd == "set_limiar") {
                     limiar_anomalia.store(j.value("valor", 10));
                 }
                 else if (cmd == "direcao") {
                     std::string v = j.value("valor", std::string("parar"));
-                    if (v == "direita")       j_sp_velocidade.store(modulo_manual_);
-                    else if (v == "esquerda") j_sp_velocidade.store(-modulo_manual_);
-                    else if (v == "parar")    j_sp_velocidade.store(0.0);
+                    if (v == "direita") {
+                        j_sp_velocidade.store(modulo_manual_);
+                        freio_ativo.store(false);   // solta o freio e anda (avanço)
+                    }
+                    else if (v == "esquerda") {
+                        j_sp_velocidade.store(-modulo_manual_);
+                        freio_ativo.store(false);   // solta o freio e anda (recuo)
+                    }
+                    else if (v == "parar") {
+                        j_sp_velocidade.store(0.0);
+                        freio_ativo.store(true);    // FREIO: parada firme
+                    }
                 }
             }
         } catch (const std::exception& e) {
