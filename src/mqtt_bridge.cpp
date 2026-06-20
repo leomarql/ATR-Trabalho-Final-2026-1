@@ -5,10 +5,10 @@ que a latência/jitter da rede NUNCA contamine as tarefas de tempo real (odometr
 20ms, controle 80ms, lidar 100ms).
 
 Responsabilidades (conforme contrato_api.md):
-  - ASSINA  robo/sensores  -> escreve i_encoder, i_sentido, i_lidar
+  - ASSINA  robo/sensores  -> escreve i_encoder, i_sentido, i_lidar, i_imu_pitch
   - ASSINA  robo/comandos  -> escreve e_automatico, j_sp_velocidade, limiar_anomalia, freio_ativo
   - PUBLICA robo/atuadores -> le o_aceleracao
-  - PUBLICA robo/telemetria-> le posicao_x, i_lidar, confianca, velocidade, modo, etc.
+  - PUBLICA robo/telemetria-> le posicao_x, i_lidar, confianca, velocidade, modo, inclinacao, etc.
 
 A comunicação com o resto do sistema é feita exclusivamente pelas variáveis
 atômicas globais, sem mutex e sem tocar nos callbacks do Asio.
@@ -29,6 +29,7 @@ extern std::atomic<bool>   executando;
 extern std::atomic<bool>   e_automatico;
 extern std::atomic<bool>   i_encoder;
 extern std::atomic<int>    i_sentido;     // sentido do movimento (+1/-1/0)
+extern std::atomic<double> i_imu_pitch;   // inclinação medida pela IMU (graus)
 extern std::atomic<double> j_sp_velocidade;
 extern std::atomic<double> velocidade_atual;
 extern std::atomic<int>    o_aceleracao;
@@ -77,9 +78,10 @@ public:
 
             // --- SENSORES (simulador -> robô) ---
             if (topico == TOPICO_SENSORES) {
-                if (j.contains("encoder")) i_encoder.store(j["encoder"].get<bool>());
-                if (j.contains("sentido")) i_sentido.store(j["sentido"].get<int>());
-                if (j.contains("lidar"))   i_lidar.store(j["lidar"].get<int>());
+                if (j.contains("encoder"))   i_encoder.store(j["encoder"].get<bool>());
+                if (j.contains("sentido"))   i_sentido.store(j["sentido"].get<int>());
+                if (j.contains("lidar"))     i_lidar.store(j["lidar"].get<int>());
+                if (j.contains("imu_pitch")) i_imu_pitch.store(j["imu_pitch"].get<double>());
             }
             // --- COMANDOS (operação remota -> robô) ---
             else if (topico == TOPICO_COMANDOS) {
@@ -157,6 +159,7 @@ void tarefa_mqtt_bridge() {
             tele["modo"]        = e_automatico.load() ? "auto" : "manual";
             tele["inspecao"]    = e_inspecao.load();
             tele["liga_camera"] = o_liga_camera.load();
+            tele["inclinacao"]  = i_imu_pitch.load();   // IMU (EXTRA: declive)
             client.publish(TOPICO_TELEMETRIA, tele.dump(), 0, false);
 
             json atu;

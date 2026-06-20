@@ -28,6 +28,7 @@ std::atomic<bool> executando{true};
 std::atomic<bool> e_automatico{true};
 std::atomic<bool> i_encoder{false};
 std::atomic<int> i_sentido{1};            // sentido do movimento: +1 avanço, -1 recuo, 0 parado
+std::atomic<double> i_imu_pitch{0.0};     // inclinação medida pela IMU em graus (EXTRA: declive)
 std::atomic<double> j_sp_velocidade{5.0}; 
 std::atomic<double> velocidade_atual{0.0};
 std::atomic<int> o_aceleracao{0};

@@ -19,6 +19,14 @@ MQTT:
 A especificação dos tópicos e mensagens MQTT está em
 [`contrato_api.md`](contrato_api.md).
 
+### Funcionalidade extra: IMU e túnel com declive
+
+O túnel possui trechos com inclinação (subidas e descidas). O simulador aplica a
+componente da gravidade na rampa, e uma **IMU simulada** mede o pitch do robô. O
+controle de navegação usa essa leitura para compensar a rampa por feed-forward
+(mantendo a velocidade na subida/descida), a inclinação é exibida nas GUIs (com o
+robô inclinando na visualização) e registrada no `log_inspecao.csv`.
+
 ## Estrutura do repositório
 
 ```
@@ -121,7 +129,7 @@ Usa o mock interno de sensores; bom para testar só o robô:
 ## Saída
 
 O robô gera o arquivo `log_inspecao.csv` no diretório de execução, com colunas:
-`Timestamp_ms, Posicao_X_m, Posicao_Y_cm, Confianca_%`.
+`Timestamp_ms, Posicao_X_m, Posicao_Y_cm, Confianca_%, Inclinacao_graus`.
 
 Ao encerrar, o robô também imprime os WCET medidos das tarefas, base para a
 análise de escalonabilidade (ver `escalonabilidade.md`).

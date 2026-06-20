@@ -71,20 +71,26 @@ Substitui o `mock.cpp`: alimenta os sensores do robô com os valores gerados
 pela física + ruído de medição.
 
 ```json
-{ "encoder": false, "sentido": 1, "lidar": 200 }
+{ "encoder": false, "sentido": 1, "lidar": 200, "imu_pitch": 0.0 }
 ```
 
-| Campo     | Tipo | Faixa             | Destino (variável C++) |
-|-----------|------|-------------------|------------------------|
-| `encoder` | bool | true/false        | `i_encoder`            |
-| `sentido` | int  | -1, 0, +1         | `i_sentido`            |
-| `lidar`   | int  | cm (ex. 200)      | `i_lidar`              |
+| Campo       | Tipo   | Faixa             | Destino (variável C++) |
+|-------------|--------|-------------------|------------------------|
+| `encoder`   | bool   | true/false        | `i_encoder`            |
+| `sentido`   | int    | -1, 0, +1         | `i_sentido`            |
+| `lidar`     | int    | cm (ex. 200)      | `i_lidar`              |
+| `imu_pitch` | double | graus (ex. ±6)    | `i_imu_pitch`          |
 
 O campo `sentido` indica a direção do movimento (+1 avanço, -1 recuo, 0 parado),
 análogo ao sinal que um encoder em quadratura forneceria. O encoder permanece
 **binário** (1 troca de estado por metro, conforme o enunciado); o `sentido` é a
 informação adicional que permite à odometria contar a distância com o sinal
 correto (avanço soma, recuo subtrai), viabilizando o comando `c_esquerda`.
+
+O campo `imu_pitch` é a inclinação (pitch) do piso medida por uma **IMU simulada**
+(funcionalidade EXTRA: túnel com declive). É independente do `lidar` (que mede o
+teto): o IMU mede a rampa do piso. O controle usa essa leitura para compensar a
+gravidade da rampa via feed-forward.
 
 ### 3. `robo/telemetria`
 
@@ -99,7 +105,8 @@ simulação**. É o "estado do robô" para exibição na tela.
   "velocidade": 0.0,
   "modo": "auto",
   "inspecao": false,
-  "liga_camera": false
+  "liga_camera": false,
+  "inclinacao": 0.0
 }
 ```
 
@@ -112,6 +119,7 @@ simulação**. É o "estado do robô" para exibição na tela.
 | `modo`        | string | `"auto"`/`"manual"`| `e_automatico`               |
 | `inspecao`    | bool   | true/false         | `e_inspecao`                 |
 | `liga_camera` | bool   | true/false         | `o_liga_camera`              |
+| `inclinacao`  | double | graus              | `i_imu_pitch` (IMU)          |
 
 ### 4. `robo/comandos`
 
@@ -176,6 +184,7 @@ Checagem de que toda variável de E/S tem um caminho na rede:
 |-----------------|--------------------|----------------|
 | `i_encoder`     | `robo/sensores`    | Simulador → C++|
 | `i_sentido`     | `robo/sensores`    | Simulador → C++|
+| `i_imu_pitch`   | `robo/sensores`    | Simulador → C++|
 | `i_lidar`       | `robo/sensores`    | Simulador → C++|
 | `o_liga_camera` | `robo/telemetria`  | C++ → GUIs     |
 | `o_aceleracao`  | `robo/atuadores`   | C++ → Simulador|

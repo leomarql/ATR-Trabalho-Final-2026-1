@@ -31,7 +31,7 @@ class OperacaoRemota:
     def __init__(self, root):
         self.root = root
         self.root.title("Operação Remota — Robô de Inspeção de Túneis")
-        self.root.geometry("440x560")
+        self.root.geometry("440x600")
         self.root.resizable(False, False)
 
         # Última telemetria recebida (escrita pelo callback MQTT, lida pela GUI).
@@ -61,6 +61,7 @@ class OperacaoRemota:
             ("posicao", "Posição X:", "— m"),
             ("teto", "Teto (Y):", "— cm"),
             ("velocidade", "Velocidade:", "— m/s"),
+            ("inclinacao", "Inclinação:", "— °"),
             ("confianca", "Confiança:", "— %"),
             ("modo", "Modo:", "—"),
             ("inspecao", "Inspeção:", "—"),
@@ -186,6 +187,12 @@ class OperacaoRemota:
             self.lbl["posicao"].config(text=f"{t.get('x', 0):.1f} m")
             self.lbl["teto"].config(text=f"{t.get('y', 0)} cm")
             self.lbl["velocidade"].config(text=f"{t.get('velocidade', 0):.1f} m/s")
+
+            # Inclinação (IMU): seta indica subida/descida/plano
+            inc = t.get("inclinacao", 0.0)
+            seta = "↗" if inc > 0.5 else ("↘" if inc < -0.5 else "→")
+            self.lbl["inclinacao"].config(text=f"{inc:+.1f}° {seta}")
+
             self.lbl["confianca"].config(text=f"{t.get('confianca', 0)} %")
 
             modo = t.get("modo", "—")

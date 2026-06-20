@@ -176,20 +176,28 @@ class Visualizacao:
         x_robo = t.get("x", 0.0) if t else 0.0
         inspecao = t.get("inspecao", False) if t else False
         camera = t.get("liga_camera", False) if t else False
+        pitch = t.get("inclinacao", 0.0) if t else 0.0   # graus (IMU)
 
         rx = self._tela_x(x_robo, cam)
         ry = CHAO_TELA
 
         cor = COR_ROBO_INSP if (inspecao or camera) else COR_ROBO
 
-        # Corpo do carrinho
-        corpo = pygame.Rect(rx - 22, ry - 26, 44, 22)
-        pygame.draw.rect(self.tela, cor, corpo, border_radius=4)
-        # Rodas
-        pygame.draw.circle(self.tela, (30, 30, 30), (rx - 12, ry - 2), 6)
-        pygame.draw.circle(self.tela, (30, 30, 30), (rx + 12, ry - 2), 6)
-        # "Câmera" no topo
-        pygame.draw.rect(self.tela, (40, 40, 40), (rx - 5, ry - 34, 10, 8))
+        # Desenha o robô em uma superfície própria e a rotaciona pelo pitch (declive),
+        # de modo que o carrinho aparece inclinado na subida/descida.
+        larg, alt = 64, 52
+        surf = pygame.Surface((larg, alt), pygame.SRCALPHA)
+        cx, cy = larg // 2, alt - 14   # referência: eixo das rodas
+        pygame.draw.rect(surf, cor, (cx - 22, cy - 24, 44, 22), border_radius=4)  # corpo
+        pygame.draw.circle(surf, (30, 30, 30), (cx - 12, cy), 6)  # roda traseira
+        pygame.draw.circle(surf, (30, 30, 30), (cx + 12, cy), 6)  # roda dianteira
+        pygame.draw.rect(surf, (40, 40, 40), (cx - 5, cy - 32, 10, 8))  # câmera no topo
+
+        # pygame rotaciona no sentido anti-horário: pitch positivo (subida) ergue a
+        # frente (lado direito) do robô, como esperado numa rampa de subida.
+        rot = pygame.transform.rotate(surf, pitch)
+        rect = rot.get_rect(center=(rx, ry - 14))
+        self.tela.blit(rot, rect.topleft)
 
         # Feixe da câmera quando inspecionando
         if inspecao or camera:
@@ -199,7 +207,7 @@ class Visualizacao:
             pygame.draw.polygon(superficie, (235, 200, 80, 60), beam)
             self.tela.blit(superficie, (0, 0))
             txt = self.fonte_pq.render("INSPECIONANDO", True, COR_DESTAQUE)
-            self.tela.blit(txt, (rx - 45, ry - 56))
+            self.tela.blit(txt, (rx - 45, ry - 60))
 
     def _desenhar_hud(self):
         t = self.telemetria
@@ -211,9 +219,12 @@ class Visualizacao:
             return
 
         modo = t.get("modo", "—").upper()
+        inc = t.get("inclinacao", 0.0)
+        seta = "/" if inc > 0.5 else ("\\" if inc < -0.5 else "-")
         info = (f"Posição: {t.get('x', 0):.1f} m    "
                 f"Teto: {t.get('y', 0)} cm    "
                 f"Veloc.: {t.get('velocidade', 0):.1f} m/s    "
+                f"Inclin.: {inc:+.1f} {seta}    "
                 f"Confiança: {t.get('confianca', 0)}%    "
                 f"Modo: {modo}")
         self.tela.blit(self.fonte.render(info, True, COR_TEXTO), (12, 7))

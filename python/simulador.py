@@ -11,6 +11,10 @@ Substitui o mock.cpp da Etapa 1. Em vez de injetar valores fixos, este script:
          análogo ao que um encoder em quadratura forneceria. Permite à odometria
          contar a distância com o sinal correto (avanço soma, recuo subtrai).
        - lidar:   altura do teto no ponto atual (perfil do túnel) + ruído de medição.
+       - imu_pitch: inclinação (pitch) do piso no ponto atual, em graus, medida por
+         uma IMU simulada (EXTRA: túnel com declive). A física aplica a componente
+         da gravidade na rampa, e o controle do robô usa essa leitura para compensar
+         a subida/descida via feed-forward.
 
 Assim o laço fecha de verdade:
    atuador (C++) -> física (aqui) -> sensores (aqui) -> robô (C++) -> atuador ...
@@ -36,6 +40,8 @@ ACEL_MAX = 4.0     # aceleração a 100% de atuação (m/s^2)
 ARRASTO = 0.5      # arrasto viscoso (atrito proporcional à velocidade)
 RUIDO_LIDAR = 3.0  # desvio-padrão do ruído de medição do lidar (cm)
 LIMIAR_SENTIDO = 0.05  # velocidade mínima (m/s) para considerar o robô em movimento
+GRAVIDADE = 9.81   # aceleração da gravidade (m/s^2), para a física na rampa (EXTRA: declive)
+RUIDO_IMU = 0.2    # desvio-padrão do ruído de medição da IMU (graus)
 
 # --- Perfil do túnel (a "verdade" física do teto) ---
 TETO_BASE = 200    # altura nominal do teto (cm)
@@ -71,6 +77,27 @@ def perfil_teto(x):
     return TETO_BASE
 
 
+# Inclinações fixas do piso ao longo do túnel: (x_inicio_m, x_fim_m, angulo_graus).
+# Ângulo > 0 = SUBIDA (declive positivo); < 0 = DESCIDA. Fora dos trechos, piso plano.
+# Mantidos suaves (até ~6°) para que o robô consiga vencer a rampa com o motor
+# (em ~6° a gravidade tira ~1,0 m/s² de uma aceleração máxima de 4,0 m/s²).
+INCLINACOES = [
+    ( 20.0,  32.0,  5.0),   # subida
+    ( 48.0,  60.0, -5.0),   # descida
+    ( 78.0,  92.0,  6.0),   # subida mais íngreme
+    (104.0, 118.0, -4.0),   # descida suave
+]
+
+
+def inclinacao(x):
+    """Inclinação REAL do piso (graus) na posição x (m). 0 = plano.
+    Positivo = subida no sentido +X; negativo = descida."""
+    for inicio, fim, angulo in INCLINACOES:
+        if inicio <= x <= fim:
+            return angulo
+    return 0.0
+
+
 class Simulador:
     """Mantém o estado físico do robô e avança a simulação passo a passo."""
 
@@ -82,6 +109,7 @@ class Simulador:
         self.sentido = 0          # +1 avanço, -1 recuo, 0 parado
         self.ultimo_metro = 0     # último metro inteiro já contabilizado
         self.lidar = TETO_BASE    # última leitura do lidar (cm)
+        self.imu_pitch = 0.0      # inclinação medida pela IMU (graus)
 
     def set_atuador(self, pct):
         """Recebe a aceleração comandada pelo robô, saturada em [-100, 100]."""
@@ -89,8 +117,15 @@ class Simulador:
 
     def passo(self, dt):
         """Avança a física um passo dt e atualiza os sensores."""
-        # Lei de Newton: a aceleração líquida é a atuação menos o arrasto.
-        a = (self.aceleracao_pct / 100.0) * ACEL_MAX - ARRASTO * self.v
+        # Inclinação do trecho atual (graus -> rad) para a física da rampa.
+        theta_graus = inclinacao(self.x)
+        theta_rad = math.radians(theta_graus)
+
+        # Lei de Newton na rampa: atuação - arrasto - componente da gravidade.
+        # Em subida (theta>0) a gravidade DESACELERA; em descida (theta<0) ACELERA.
+        a = ((self.aceleracao_pct / 100.0) * ACEL_MAX
+             - ARRASTO * self.v
+             - GRAVIDADE * math.sin(theta_rad))
         self.v += a * dt
         self.x += self.v * dt
 
@@ -113,9 +148,17 @@ class Simulador:
         leitura = perfil_teto(self.x) + random.gauss(0, RUIDO_LIDAR)
         self.lidar = int(round(leitura))
 
+        # IMU: mede o pitch (inclinação) do piso no ponto atual, com ruído.
+        self.imu_pitch = theta_graus + random.gauss(0, RUIDO_IMU)
+
     def leitura_sensores(self):
         """Empacota o estado dos sensores no formato do contrato."""
-        return {"encoder": self.encoder, "sentido": self.sentido, "lidar": self.lidar}
+        return {
+            "encoder": self.encoder,
+            "sentido": self.sentido,
+            "lidar": self.lidar,
+            "imu_pitch": round(self.imu_pitch, 2),
+        }
 
 
 # Instância única do simulador, compartilhada com os callbacks MQTT.
