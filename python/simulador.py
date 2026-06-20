@@ -40,16 +40,35 @@ LIMIAR_SENTIDO = 0.05  # velocidade mínima (m/s) para considerar o robô em mov
 # --- Perfil do túnel (a "verdade" física do teto) ---
 TETO_BASE = 200    # altura nominal do teto (cm)
 
+# Anomalias fixas ao longo do túnel: cada tupla é (x_inicio_m, x_fim_m, altura_cm).
+# Altura MAIOR que a base = BURACO (teto mais alto); MENOR = SALIÊNCIA (mais baixo).
+# Ficam bem distribuídas, com trechos retos (sem falhas) entre elas, como na Figura 2,
+# e variam em largura (2 a 4 m) e profundidade para tornar a inspeção mais rica.
+ANOMALIAS = [
+    (  8.0,  10.0, 280),   # buraco
+    ( 15.0,  17.0, 150),   # saliência
+    ( 24.0,  27.0, 285),   # buraco largo
+    ( 34.0,  36.0, 165),   # saliência
+    ( 44.0,  46.0, 255),   # buraco raso
+    ( 54.0,  58.0, 140),   # saliência larga e funda
+    ( 66.0,  68.0, 275),   # buraco
+    ( 76.0,  79.0, 170),   # saliência
+    ( 88.0,  91.0, 282),   # buraco fundo
+    ( 99.0, 101.0, 248),   # buraco raso
+    (108.0, 112.0, 155),   # saliência larga
+    (120.0, 122.0, 270),   # buraco
+]
+
 
 def perfil_teto(x):
     """Altura REAL do teto (cm) na posição x (m).
-    Define as anomalias: um buraco (teto mais alto) e uma saliência (mais baixo)."""
-    if 8.0 <= x <= 10.0:
-        return 280          # FALHA 1: BURACO (aumento de altura)
-    elif 15.0 <= x <= 17.0:
-        return 150          # FALHA 2: SALIÊNCIA (redução de altura)
-    else:
-        return TETO_BASE    # trecho reto, sem falhas
+    Retorna a altura da anomalia se x cair em um trecho de falha; caso contrário,
+    o teto nominal (trecho reto, sem falhas). Buraco = teto mais alto (valor maior);
+    saliência = teto mais baixo (valor menor)."""
+    for inicio, fim, altura in ANOMALIAS:
+        if inicio <= x <= fim:
+            return altura
+    return TETO_BASE
 
 
 class Simulador:
