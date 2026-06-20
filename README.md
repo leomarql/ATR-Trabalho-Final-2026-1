@@ -4,8 +4,8 @@ Trabalho final da disciplina de Automação em Tempo Real (2026/1) — sistema
 embarcado em C++ e simulação para robô autônomo de inspeção de túneis.
 
 O robô percorre um túnel mapeando o perfil do teto para detectar anomalias
-(buracos e saliências). O sistema é dividido em três processos que se comunicam
-via MQTT:
+(buracos e saliências). O sistema é dividido em processos que se comunicam via
+MQTT:
 
 - **Robô embarcado (C++):** núcleo de tempo real — navegação (PID), odometria,
   reconstrução do teto (LIDAR), inspeção por câmera e coleta de dados.
@@ -13,6 +13,8 @@ via MQTT:
   fechando o laço com os atuadores do robô.
 - **Operação Remota (Python):** interface gráfica do operador, com comandos e
   telemetria em tempo real.
+- **Simulação visual (Python):** animação 2D do robô percorrendo o túnel e do
+  perfil do teto reconstruído.
 
 A especificação dos tópicos e mensagens MQTT está em
 [`contrato_api.md`](contrato_api.md).
@@ -20,19 +22,20 @@ A especificação dos tópicos e mensagens MQTT está em
 ## Estrutura do repositório
 
 ```
-include/        Cabeçalhos C++ (BufferCompartilhado.hpp)
-src/            Código-fonte C++ do robô embarcado
-python/         Simulador e Operação Remota (Python)   [Etapa 2]
-CMakeLists.txt  Build do robô embarcado
-contrato_api.md Contrato da API MQTT
-requirements.txt Dependências Python
+include/          Cabeçalhos C++ (BufferCompartilhado.hpp, Profiler.hpp)
+src/              Código-fonte C++ do robô embarcado
+python/           Simulador, Operação Remota e Simulação Visual (Python)
+CMakeLists.txt    Build do robô embarcado
+iniciar.sh        Launcher único do sistema completo
+contrato_api.md   Contrato da API MQTT
+requirements.txt  Dependências Python
 ```
 
 ## Dependências
 
-Para rodar o sistema completo (robô + simulação + operação remota) em uma
-máquina, instale **todos** os itens abaixo. Os dois integrantes mantêm o
-ambiente completo para desenvolver e testar de forma independente.
+Para rodar o sistema completo em uma máquina, instale **todos** os itens abaixo.
+Os dois integrantes mantêm o ambiente completo para desenvolver e testar de forma
+independente.
 
 > **Recomendação:** rodar tudo dentro do WSL (Ubuntu). Assim o broker, o C++ e o
 > Python se comunicam por `localhost`, sem complicação de rede.
@@ -53,12 +56,16 @@ sudo apt install -y libpaho-mqtt-dev libpaho-mqttpp-dev
 sudo apt install -y nlohmann-json3-dev
 ```
 
-### Stack Python (simulação + operação remota)
+### Stack Python (simulação + operação remota + visualização)
 
 ```bash
 sudo apt install -y python3 python3-pip python3-tk
-pip install -r requirements.txt
+pip install -r requirements.txt --break-system-packages
 ```
+
+> A flag `--break-system-packages` é necessária no Ubuntu 24.04 (Python 3.12),
+> que bloqueia instalação global por padrão (PEP 668). Alternativa: usar um
+> ambiente virtual (`python3 -m venv venv && source venv/bin/activate`).
 
 ## Como compilar (robô embarcado)
 
@@ -72,41 +79,52 @@ Gera dois executáveis em `build/`: `robo_embarcado` (sistema principal) e
 
 ## Como executar
 
-### Modo offline (sem simulador externo)
+### Sistema completo (recomendado) — launcher único
 
-Usa o mock interno de sensores. Bom para testar o núcleo C++ isoladamente.
+Sobe broker, robô, simulador e as duas GUIs de uma vez. Encerra tudo com Ctrl+C:
+
+```bash
+./iniciar.sh
+```
+
+(na primeira vez, dê permissão de execução: `chmod +x iniciar.sh`)
+
+### Execução manual (para depuração)
+
+Cada processo em um terminal:
+
+```bash
+# 1. Broker
+mosquitto                                   # ou: sudo systemctl start mosquitto
+
+# 2. Simulador físico
+python3 python/simulador.py
+
+# 3. Robô embarcado (modo online)
+./build/robo_embarcado --online
+
+# 4. Operação Remota (GUI)
+python3 python/operacao_remota.py
+
+# 5. Simulação visual (GUI)
+python3 python/visualizacao.py
+```
+
+### Modo offline (núcleo C++ isolado, sem MQTT)
+
+Usa o mock interno de sensores; bom para testar só o robô:
 
 ```bash
 ./build/robo_embarcado --offline
 ```
 
-### Modo online (laço fechado com a simulação)
-
-Requer o broker MQTT e os scripts Python em execução. Ordem sugerida:
-
-```bash
-# 1. Garantir que o broker está ativo
-sudo systemctl start mosquitto      # ou: mosquitto -v
-
-# 2. Iniciar o simulador físico (Python)
-python3 python/simulador.py
-
-# 3. Iniciar a Operação Remota (Python)
-python3 python/operacao_remota.py
-
-# 4. Iniciar o robô embarcado em modo online
-./build/robo_embarcado --online
-```
-
-Encerrar o robô no modo online: `Ctrl+C`.
-
-> Um script único de inicialização (que sobe broker, robô e scripts Python de
-> uma vez) será adicionado na fase de integração.
-
 ## Saída
 
 O robô gera o arquivo `log_inspecao.csv` no diretório de execução, com colunas:
 `Timestamp_ms, Posicao_X_m, Posicao_Y_cm, Confianca_%`.
+
+Ao encerrar, o robô também imprime os WCET medidos das tarefas, base para a
+análise de escalonabilidade (ver `escalonabilidade.md`).
 
 ## Testes
 
