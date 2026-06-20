@@ -8,6 +8,7 @@
 #   3. Simulador físico (Python).
 #   4. Operação Remota (GUI Python).
 #   5. Simulação visual (GUI Python).
+#   6. Inspeção visual por YOLO (Python, EXTRA).
 #
 # Encerra TODOS os processos de uma vez ao pressionar Ctrl+C.
 #
@@ -85,6 +86,11 @@ PIDS+=($!)
 # --- 5. Simulação visual (GUI) ---
 echo "[LAUNCHER] Iniciando Simulação Visual..."
 python3 "$PYDIR/visualizacao.py" &
+PIDS+=($!)
+
+# --- 6. Inspeção visual por YOLO (EXTRA) ---
+echo "[LAUNCHER] Iniciando Inspeção Visual (YOLO)..."
+python3 "$PYDIR/inspecao_visual.py" &
 PIDS+=($!)
 
 echo ""

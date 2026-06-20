@@ -23,7 +23,6 @@
 *.dll
 *.so.*
 
-
 # Fortran module files
 *.mod
 *.smod
@@ -67,10 +66,16 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
-build/
-build/
+
+# Python cache
+__pycache__/
+*.pyc
 
 # Logs de execução
 *.csv
-log_inspecao.csv__pycache__/
-*.pyc
+log_inspecao.csv
+
+# Inspeção visual por YOLO (EXTRA)
+*.pt                          # pesos do modelo YOLO (baixados automaticamente)
+python/inspecao_resultados/   # imagens anotadas geradas nas inspeções
+python/inspecao_imagens/      # "capturas" (exemplos baixados; use as suas próprias)

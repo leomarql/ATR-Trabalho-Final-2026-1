@@ -1,12 +1,16 @@
 # Dependências Python do projeto — Etapa 2
-# Instalar com: pip install -r requirements.txt
+# Instalar com: pip install -r requirements.txt --break-system-packages
 
-# Cliente MQTT (simulador físico e operação remota)
+# Cliente MQTT (simulador físico, operação remota, visualização, inspeção YOLO)
 paho-mqtt
 
 # Animação da simulação visual do túnel
 pygame
 matplotlib
+
+# Inspeção visual por YOLO (EXTRA). Puxa também o torch (CPU) automaticamente.
+# Na 1ª execução, o serviço baixa o modelo yolov8n.pt (~6 MB).
+ultralytics
 
 # Tkinter (GUI da Operação Remota) NÃO entra aqui:
 # ele acompanha a instalação padrão do Python.

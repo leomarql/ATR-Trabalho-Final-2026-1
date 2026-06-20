@@ -15,6 +15,8 @@ MQTT:
   telemetria em tempo real.
 - **Simulação visual (Python):** animação 2D do robô percorrendo o túnel e do
   perfil do teto reconstruído.
+- **Inspeção visual por YOLO (Python, EXTRA):** quando a câmera é acionada em uma
+  anomalia, roda YOLOv8 para detectar objetos na "captura" e publica o resultado.
 
 A especificação dos tópicos e mensagens MQTT está em
 [`contrato_api.md`](contrato_api.md).
@@ -27,12 +29,26 @@ controle de navegação usa essa leitura para compensar a rampa por feed-forward
 (mantendo a velocidade na subida/descida), a inclinação é exibida nas GUIs (com o
 robô inclinando na visualização) e registrada no `log_inspecao.csv`.
 
+### Funcionalidade extra: inspeção visual com YOLO
+
+O processo `python/inspecao_visual.py` faz a inspeção visual com **YOLOv8**
+(Ultralytics). Ele observa a telemetria e, na borda de subida de `liga_camera`
+(câmera acionada em uma anomalia), roda o YOLO em uma imagem de "captura" da
+câmera, detecta objetos (classe + confiança), publica o resultado em
+`robo/inspecao_visual` (exibido na Simulação Visual) e salva a imagem anotada em
+`python/inspecao_resultados/`.
+
+As "capturas" ficam em `python/inspecao_imagens/`. Se a pasta estiver vazia na
+primeira execução, o serviço baixa imagens de exemplo para demonstrar o pipeline;
+basta substituí-las pelas imagens desejadas. O modelo `yolov8n.pt` (~6 MB) é
+baixado automaticamente na primeira execução.
+
 ## Estrutura do repositório
 
 ```
 include/          Cabeçalhos C++ (BufferCompartilhado.hpp, Profiler.hpp)
 src/              Código-fonte C++ do robô embarcado
-python/           Simulador, Operação Remota e Simulação Visual (Python)
+python/           Simulador, Operação Remota, Simulação Visual e Inspeção YOLO (Python)
 CMakeLists.txt    Build do robô embarcado
 iniciar.sh        Launcher único do sistema completo
 contrato_api.md   Contrato da API MQTT
@@ -64,7 +80,7 @@ sudo apt install -y libpaho-mqtt-dev libpaho-mqttpp-dev
 sudo apt install -y nlohmann-json3-dev
 ```
 
-### Stack Python (simulação + operação remota + visualização)
+### Stack Python (simulação + operação remota + visualização + inspeção YOLO)
 
 ```bash
 sudo apt install -y python3 python3-pip python3-tk
@@ -74,6 +90,10 @@ pip install -r requirements.txt --break-system-packages
 > A flag `--break-system-packages` é necessária no Ubuntu 24.04 (Python 3.12),
 > que bloqueia instalação global por padrão (PEP 668). Alternativa: usar um
 > ambiente virtual (`python3 -m venv venv && source venv/bin/activate`).
+>
+> O `requirements.txt` inclui o `ultralytics` (YOLOv8) para a inspeção visual
+> extra; ele puxa o `torch` (CPU) automaticamente. É um download grande na
+> primeira instalação.
 
 ## Como compilar (robô embarcado)
 
@@ -116,6 +136,9 @@ python3 python/operacao_remota.py
 
 # 5. Simulação visual (GUI)
 python3 python/visualizacao.py
+
+# 6. Inspeção visual por YOLO (EXTRA)
+python3 python/inspecao_visual.py
 ```
 
 ### Modo offline (núcleo C++ isolado, sem MQTT)

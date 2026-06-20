@@ -37,6 +37,7 @@ except Exception:
 BROKER = "localhost"
 PORTA = 1883
 TOPICO_TELEMETRIA = "robo/telemetria"
+TOPICO_INSPECAO = "robo/inspecao_visual"   # resultado do YOLO (EXTRA)
 
 # --- Configuração da janela ---
 LARGURA, ALTURA = 960, 540
@@ -102,6 +103,8 @@ class Visualizacao:
         self.telemetria = None       # última telemetria recebida (dict)
         self.perfil_medido = {}      # {metro(int): y_cm} reconstruído pelas medições
         self.conectado = False
+        self.ultima_deteccao = None  # último resultado do YOLO (dict)
+        self.t_deteccao = 0          # instante (ms) da última detecção, p/ esmaecer
 
         # --- pygame ---
         pygame.init()
@@ -130,18 +133,27 @@ class Visualizacao:
     def _on_connect(self, client, userdata, flags, reason_code, properties):
         self.conectado = True
         client.subscribe(TOPICO_TELEMETRIA)
-        print(f"[VIS] Conectado ao broker. Assinando {TOPICO_TELEMETRIA}")
+        client.subscribe(TOPICO_INSPECAO)
+        print(f"[VIS] Conectado ao broker. Assinando {TOPICO_TELEMETRIA} e {TOPICO_INSPECAO}")
 
     def _on_message(self, client, userdata, msg):
         try:
-            t = json.loads(msg.payload.decode())
-            self.telemetria = t
-            # Reconstrói o perfil do teto: guarda a leitura y para cada metro x.
-            x = t.get("x", 0.0)
-            y = t.get("y", TETO_BASE)
-            self.perfil_medido[round(x)] = y
+            dados = json.loads(msg.payload.decode())
         except Exception as e:
-            print(f"[VIS] Telemetria ignorada: {e}")
+            print(f"[VIS] Mensagem ignorada: {e}")
+            return
+
+        if msg.topic == TOPICO_INSPECAO:
+            # Resultado do YOLO (EXTRA): guarda para exibir no painel.
+            self.ultima_deteccao = dados
+            self.t_deteccao = pygame.time.get_ticks()
+            return
+
+        # Telemetria: reconstrói o perfil do teto (leitura y para cada metro x).
+        self.telemetria = dados
+        x = dados.get("x", 0.0)
+        y = dados.get("y", TETO_BASE)
+        self.perfil_medido[round(x)] = y
 
     # ------------------------------------------------------------------ #
     #  Conversões mundo -> tela (com câmera que segue o robô)
@@ -224,6 +236,9 @@ class Visualizacao:
         # --- Robô (fica em CHAO_TELA, inclinado pelo pitch; o túnel tomba ao redor) ---
         self._desenhar_robo(cam)
 
+        # --- Painel de detecção do YOLO (EXTRA: inspeção visual) ---
+        self._desenhar_painel_yolo()
+
         # --- Painel de texto (HUD) ---
         self._desenhar_hud()
 
@@ -266,6 +281,40 @@ class Visualizacao:
             self.tela.blit(superficie, (0, 0))
             txt = self.fonte_pq.render("INSPECIONANDO", True, COR_DESTAQUE)
             self.tela.blit(txt, (rx - 45, ry - 60))
+
+    def _desenhar_painel_yolo(self):
+        """Painel com o último resultado da inspeção visual por YOLO (EXTRA).
+        Aparece no canto superior direito por alguns segundos após cada detecção."""
+        d = self.ultima_deteccao
+        if d is None:
+            return
+        # Esmaece o painel ~6s após a última detecção.
+        idade = pygame.time.get_ticks() - self.t_deteccao
+        if idade > 6000:
+            return
+
+        objetos = d.get("objetos", [])
+        linhas = [f"YOLO @ x={d.get('x', 0)} m"]
+        if objetos:
+            for o in objetos[:6]:
+                linhas.append(f"  {o['classe']}  {o['conf']:.2f}")
+        else:
+            linhas.append("  nenhum objeto detectado")
+
+        larg_painel = 220
+        alt_painel = 24 + 20 * len(linhas)
+        px = LARGURA - larg_painel - 12
+        py = 44
+
+        painel = pygame.Surface((larg_painel, alt_painel), pygame.SRCALPHA)
+        painel.fill((20, 24, 30, 210))
+        pygame.draw.rect(painel, COR_DESTAQUE, painel.get_rect(), 2)
+        self.tela.blit(painel, (px, py))
+
+        # Título destacado, itens em branco.
+        self.tela.blit(self.fonte_pq.render(linhas[0], True, COR_DESTAQUE), (px + 10, py + 8))
+        for i, ln in enumerate(linhas[1:], start=1):
+            self.tela.blit(self.fonte_pq.render(ln, True, COR_TEXTO), (px + 10, py + 8 + 20 * i))
 
     def _desenhar_hud(self):
         t = self.telemetria

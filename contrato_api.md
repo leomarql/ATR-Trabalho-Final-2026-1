@@ -140,6 +140,31 @@ Formato `{comando, valor}` para acomodar comandos heterogêneos da Tabela 2.
 | `{"comando":"direcao","valor":"parar"}`           | para o robô (setpoint 0)              | `c_para`                     |
 | `{"comando":"set_limiar","valor":15}`             | escreve em `limiar_anomalia`          | limiar configurável (item 4) |
 
+### 5. `robo/inspecao_visual` (EXTRA: YOLO)
+
+Publicado pelo **serviço de inspeção visual** (`inspecao_visual.py`), assinado pela
+**Simulação Visual**. Resultado da detecção de objetos por YOLO quando a câmera é
+acionada em uma anomalia (gatilho: borda de subida de `liga_camera` na telemetria).
+
+```json
+{
+  "x": 9.0,
+  "n": 2,
+  "objetos": [
+    { "classe": "backpack", "conf": 0.71 },
+    { "classe": "bottle",   "conf": 0.55 }
+  ],
+  "imagem": "insp_x0009.0.jpg"
+}
+```
+
+| Campo      | Tipo   | Descrição                                            |
+|------------|--------|------------------------------------------------------|
+| `x`        | double | posição (m) em que a câmera foi acionada             |
+| `n`        | int    | número de objetos detectados                         |
+| `objetos`  | lista  | cada item: `{classe (string), conf (0..1)}`          |
+| `imagem`   | string | nome do arquivo anotado salvo em `inspecao_resultados/` |
+
 #### Semântica dos comandos de direção
 
 Os comandos de direção operam sobre o **modo manual** e definem o setpoint de
