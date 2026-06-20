@@ -1,9 +1,14 @@
 /*
 comando.cpp - Tarefa de Comando de Navegação
 O que faz: Roda assincronamente a cada 200ms.
-Decide o setpoint de velocidade (j_sp_velocidade) dependendo do modo de operação.
+Decide o setpoint de velocidade (j_sp_velocidade) conforme o modo de operação e o
+estado de inspeção.
 
-  - Modo AUTOMÁTICO: a lógica autônoma define o setpoint (velocidade de cruzeiro).
+  - Modo AUTOMÁTICO: a lógica autônoma define o setpoint. Em operação normal usa a
+    velocidade de cruzeiro; durante a inspeção de uma anomalia (e_inspecao ativo),
+    reduz para a velocidade de inspeção, fazendo o robô "andar mais devagar"
+    enquanto a câmera analisa a falha (Tarefa 4 do enunciado e estado e_inspecao
+    da Tabela 2: "navegando com velocidade limitada").
   - Modo MANUAL: NÃO sobrescreve o setpoint. Quem controla é o operador, via os
     comandos de direção (direita/esquerda/parar) recebidos pela ponte MQTT, que
     escrevem diretamente em j_sp_velocidade. Se esta tarefa zerasse o setpoint a
@@ -21,16 +26,26 @@ Mede o próprio tempo de execução (WCET) para a análise de escalonabilidade.
 
 // Variáveis Globais (Nascem no main.cpp)
 extern std::atomic<bool> e_automatico;
+extern std::atomic<bool> e_inspecao;        // anomalia em inspeção -> velocidade limitada
 extern std::atomic<double> j_sp_velocidade;
-extern MedidorWCET wcet_comando;   // medidor de tempo de execução
+extern MedidorWCET wcet_comando;            // medidor de tempo de execução
+
+// Velocidades de navegação autônoma (m/s)
+static constexpr double VELOCIDADE_CRUZEIRO = 5.0;  // operação normal
+static constexpr double VELOCIDADE_INSPECAO = 2.0;  // reduzida durante a inspeção
 
 void callback_comando_navegacao(boost::asio::steady_timer& timer) {
     auto t0 = std::chrono::steady_clock::now();  // início da medição de WCET
 
-    // Modo automático: define a velocidade de cruzeiro autônoma.
+    // Modo automático: velocidade de cruzeiro, reduzida durante a inspeção de uma
+    // anomalia (o robô anda mais devagar para a câmera analisar a falha).
     // Modo manual: não toca no setpoint (controlado pelos comandos de direção via MQTT).
     if (e_automatico.load() == true) {
-        j_sp_velocidade.store(5.0);
+        if (e_inspecao.load() == true) {
+            j_sp_velocidade.store(VELOCIDADE_INSPECAO);
+        } else {
+            j_sp_velocidade.store(VELOCIDADE_CRUZEIRO);
+        }
     }
 
     wcet_comando.registrar_desde(t0);  // fim da medição (antes de reagendar)

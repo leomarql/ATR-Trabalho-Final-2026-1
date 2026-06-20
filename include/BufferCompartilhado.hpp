@@ -1,8 +1,15 @@
 /*
-buffer_compartilhado.hpp - Implementação de um buffer thread-safe para comunicação entre o LIDAR e a câmera.
-O que faz: Esta classe BufferCompartilhado é um wrapper em torno de uma fila padrão, protegida por mutexes e condicionais para garantir a segurança em ambientes multithread. 
-Ela suporta operações de push e pop, com uma política de descarte FIFO quando a capacidade máxima é atingida. 
-Além disso, inclui um método try_pop para evitar bloqueios desnecessários e um mecanismo de fechamento seguro para encerrar consumidores de forma elegante.
+BufferCompartilhado.hpp - Buffer thread-safe (fila FIFO) entre tarefas produtoras
+e o consumidor.
+O que faz: Esta classe é um wrapper em torno de uma fila padrão, protegida por
+mutex e variável de condição para garantir segurança em ambiente multithread.
+No sistema, liga as tarefas PRODUTORAS (reconstrução do teto/LIDAR e odometria) ao
+COLETOR DE DADOS — não tem relação com a câmera, que é acionada por outra variável
+de condição (cv_camera).
+Suporta push e pop, com política de descarte FIFO quando a capacidade máxima é
+atingida (descarta o mais antigo). Inclui try_pop para leitura não bloqueante
+(evita a vulnerabilidade TOCTOU) e um mecanismo de fechamento seguro (close) para
+encerrar os consumidores de forma elegante, sem deadlock no desligamento.
 */
 
 #pragma once
@@ -20,8 +27,8 @@ private:
     std::mutex mtx;
     std::condition_variable cv;
     size_t capacidade_maxima;
-    
-    // Novas variáveis para desligamento seguro e métricas
+
+    // Variáveis para desligamento seguro e métricas
     bool fechado = false;
     std::atomic<int> descartes{0}; 
 
