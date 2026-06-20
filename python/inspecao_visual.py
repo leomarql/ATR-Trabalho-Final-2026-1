@@ -86,10 +86,21 @@ class InspecaoVisual:
         if not self.imagens:
             print("[YOLO] AVISO: nenhuma imagem disponível em inspecao_imagens/.")
 
-        # Carrega o modelo YOLO (uma vez)
+        # Carrega o modelo YOLO (uma vez). Trata com clareza os erros mais comuns:
+        # biblioteca ausente ou falha ao baixar o modelo na primeira execução.
         print(f"[YOLO] Carregando modelo {MODELO} (1ª vez baixa ~6 MB)...")
-        from ultralytics import YOLO
-        self.model = YOLO(MODELO)
+        try:
+            from ultralytics import YOLO
+        except ImportError:
+            print("[YOLO] ERRO: biblioteca 'ultralytics' nao instalada.")
+            print("[YOLO] Instale com: pip install ultralytics --break-system-packages")
+            raise SystemExit(1)
+        try:
+            self.model = YOLO(MODELO)
+        except Exception as e:
+            print(f"[YOLO] ERRO ao carregar o modelo {MODELO}: {e}")
+            print("[YOLO] Na 1a execucao e preciso internet para baixar o modelo (~6 MB).")
+            raise SystemExit(1)
         print("[YOLO] Modelo pronto.")
 
         self._iniciar_mqtt()
