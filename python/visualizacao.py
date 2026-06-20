@@ -18,17 +18,20 @@ Requer paho-mqtt 2.x e pygame. Rodar com: python3 visualizacao.py
 
 import json
 import sys
+import math
 import pygame
 import paho.mqtt.client as mqtt
 
-# Tenta importar o perfil real do túnel para desenhá-lo ao fundo (opcional).
-# Se falhar (ex.: rodando fora da pasta), apenas não desenha o ground truth.
+# Tenta importar o perfil real do túnel (teto e inclinação do piso) para desenhá-lo
+# ao fundo. Se falhar (ex.: rodando fora da pasta), apenas não desenha o ground truth.
 try:
-    from simulador import perfil_teto, TETO_BASE
+    from simulador import perfil_teto, inclinacao, TETO_BASE
     TEM_GROUND_TRUTH = True
 except Exception:
     TETO_BASE = 200
     TEM_GROUND_TRUTH = False
+    def inclinacao(x):
+        return 0.0
 
 # --- Configuração MQTT ---
 BROKER = "localhost"
@@ -43,15 +46,49 @@ FPS = 60
 METROS_VISIVEIS = 26.0          # largura do túnel visível (m)
 MARGEM = 40                     # margem lateral (px)
 ESCALA_X = (LARGURA - 2 * MARGEM) / METROS_VISIVEIS  # px por metro
-ESCALA_Y = 1.4                  # px por cm (vertical)
+ESCALA_Y = 1.4                  # px por cm (vertical, para o teto)
+ESCALA_PISO = ESCALA_X          # px por metro na vertical do piso: igual à horizontal,
+                                # para que a rampa na tela tenha o ângulo real (e o robô,
+                                # que tomba pelo pitch, encaixe exatamente no chão).
 TETO_TELA_BASE = 130            # y de tela do teto nominal (px)
-CHAO_TELA = 430                 # y de tela do chão (px)
+CHAO_TELA = 430                 # y de tela do chão sob o robô (px)
+
+# --- Perfil de altura do piso (subida acumulada em metros, integrando a inclinação) ---
+# A inclinação dá o ângulo do piso em cada x; a altura é a integral de tan(ângulo).
+# Pré-computado uma vez (a inclinação é fixa), com interpolação linear na consulta.
+_PISO_PASSO = 0.25
+_PISO_XMAX = 200.0
+
+
+def _construir_perfil_piso():
+    alturas = [0.0]
+    x, h = 0.0, 0.0
+    while x < _PISO_XMAX:
+        h += math.tan(math.radians(inclinacao(x))) * _PISO_PASSO
+        x += _PISO_PASSO
+        alturas.append(h)
+    return alturas
+
+
+_PISO_H = _construir_perfil_piso() if TEM_GROUND_TRUTH else [0.0]
+
+
+def altura_piso(x):
+    """Altura do piso (subida acumulada, em metros) na posição x (m). 0 = nível inicial."""
+    if not TEM_GROUND_TRUTH or x <= 0:
+        return 0.0
+    i = int(x / _PISO_PASSO)
+    if i >= len(_PISO_H) - 1:
+        return _PISO_H[-1]
+    frac = (x - i * _PISO_PASSO) / _PISO_PASSO
+    return _PISO_H[i] + frac * (_PISO_H[i + 1] - _PISO_H[i])
 
 # --- Cores ---
 COR_FUNDO = (18, 18, 24)
 COR_ROCHA = (70, 62, 55)
 COR_ROCHA_ESC = (50, 44, 38)
 COR_CHAO = (60, 55, 50)
+COR_CHAO_LINHA = (95, 86, 76)   # linha de superfície do piso (rampa)
 COR_PERFIL = (90, 200, 120)     # perfil medido (verde)
 COR_REAL = (90, 90, 110)        # teto real ao fundo (cinza)
 COR_ROBO = (80, 170, 230)
@@ -122,6 +159,13 @@ class Visualizacao:
         # y maior (buraco) -> teto mais ALTO na tela; y menor (saliência) -> mais baixo.
         return int(TETO_TELA_BASE - (y_cm - TETO_BASE) * ESCALA_Y)
 
+    def _desloc_y(self, x_m):
+        """Deslocamento vertical (px) do túnel em x, relativo ao piso sob o robô.
+        Mantém o robô numa altura fixa (CHAO_TELA) e faz o túnel inclinar ao redor:
+        trechos mais altos que o robô sobem na tela (y menor), mais baixos descem."""
+        x_robo = self.telemetria.get("x", 0.0) if self.telemetria else 0.0
+        return -(altura_piso(x_m) - altura_piso(x_robo)) * ESCALA_PISO
+
     # ------------------------------------------------------------------ #
     #  Desenho
     # ------------------------------------------------------------------ #
@@ -129,41 +173,55 @@ class Visualizacao:
         self.tela.fill(COR_FUNDO)
         cam = self._camera_x()
 
-        # --- Teto real ao fundo (ground truth), se disponível ---
+        # --- Teto real ao fundo (ground truth), deslocado pela inclinação do piso ---
         if TEM_GROUND_TRUTH:
             pts_real = []
             x = cam
             while x <= cam + METROS_VISIVEIS:
-                pts_real.append((self._tela_x(x, cam), self._tela_y_teto(perfil_teto(x))))
+                y = self._tela_y_teto(perfil_teto(x)) + self._desloc_y(x)
+                pts_real.append((self._tela_x(x, cam), int(y)))
                 x += 0.25
             if len(pts_real) > 1:
                 pygame.draw.lines(self.tela, COR_REAL, False, pts_real, 2)
 
-        # --- Massa de rocha do teto (preenchimento acima do perfil real ou nominal) ---
-        # Desenha o teto como um polígono cinza do topo da tela até a linha do teto.
+        # --- Massa de rocha do teto (polígono do topo da tela até a linha do teto) ---
+        # O teto acompanha a inclinação do piso (o túnel inteiro tomba na rampa).
         pts_teto = [(MARGEM, 0), (LARGURA - MARGEM, 0)]
         x = cam + METROS_VISIVEIS
         while x >= cam:
             yt = perfil_teto(x) if TEM_GROUND_TRUTH else TETO_BASE
-            pts_teto.append((self._tela_x(x, cam), self._tela_y_teto(yt)))
+            y = self._tela_y_teto(yt) + self._desloc_y(x)
+            pts_teto.append((self._tela_x(x, cam), int(y)))
             x -= 0.25
         pygame.draw.polygon(self.tela, COR_ROCHA_ESC, pts_teto)
 
-        # --- Chão ---
-        pygame.draw.rect(self.tela, COR_CHAO,
-                         (0, CHAO_TELA, LARGURA, ALTURA - CHAO_TELA))
+        # --- Chão seguindo o perfil de inclinação (a rampa visual) ---
+        # Linha de superfície do piso e massa de rocha abaixo dela.
+        pts_sup = []
+        x = cam
+        while x <= cam + METROS_VISIVEIS:
+            y = CHAO_TELA + self._desloc_y(x)
+            pts_sup.append((self._tela_x(x, cam), int(y)))
+            x += 0.25
+        pts_chao = list(pts_sup)
+        pts_chao.append((self._tela_x(cam + METROS_VISIVEIS, cam), ALTURA))
+        pts_chao.append((self._tela_x(cam, cam), ALTURA))
+        pygame.draw.polygon(self.tela, COR_CHAO, pts_chao)
+        if len(pts_sup) > 1:
+            pygame.draw.lines(self.tela, COR_CHAO_LINHA, False, pts_sup, 2)
 
         # --- Perfil MEDIDO pelo robô (a reconstrução em tempo real) ---
         metros = sorted(m for m in self.perfil_medido
                         if cam - 1 <= m <= cam + METROS_VISIVEIS + 1)
-        pts_med = [(self._tela_x(m, cam), self._tela_y_teto(self.perfil_medido[m]))
+        pts_med = [(self._tela_x(m, cam),
+                    int(self._tela_y_teto(self.perfil_medido[m]) + self._desloc_y(m)))
                    for m in metros]
         if len(pts_med) > 1:
             pygame.draw.lines(self.tela, COR_PERFIL, False, pts_med, 3)
         for p in pts_med:
             pygame.draw.circle(self.tela, COR_PERFIL, p, 3)
 
-        # --- Robô ---
+        # --- Robô (fica em CHAO_TELA, inclinado pelo pitch; o túnel tomba ao redor) ---
         self._desenhar_robo(cam)
 
         # --- Painel de texto (HUD) ---
