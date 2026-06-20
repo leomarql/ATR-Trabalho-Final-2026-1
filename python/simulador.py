@@ -3,9 +3,13 @@ simulador.py - Simulador físico do robô de inspeção (LAÇO FECHADO).
 
 Substitui o mock.cpp da Etapa 1. Em vez de injetar valores fixos, este script:
   1. ASSINA  robo/atuadores  -> recebe a aceleração comandada pelo robô (C++).
-  2. Aplica as LEIS DE NEWTON para mover o robô (a -> v -> x).
+  2. Aplica as LEIS DE NEWTON para mover o robô (a -> v -> x), permitindo avanço
+     E recuo (velocidade negativa).
   3. Gera os SENSORES e PUBLICA em robo/sensores:
        - encoder: troca de estado a cada metro percorrido.
+       - sentido: sinal de direção do movimento (+1 avanço, -1 recuo, 0 parado),
+         análogo ao que um encoder em quadratura forneceria. Permite à odometria
+         contar a distância com o sinal correto (avanço soma, recuo subtrai).
        - lidar:   altura do teto no ponto atual (perfil do túnel) + ruído de medição.
 
 Assim o laço fecha de verdade:
@@ -31,6 +35,7 @@ DT = 0.05          # passo de integração e de publicação (s)
 ACEL_MAX = 4.0     # aceleração a 100% de atuação (m/s^2)
 ARRASTO = 0.5      # arrasto viscoso (atrito proporcional à velocidade)
 RUIDO_LIDAR = 3.0  # desvio-padrão do ruído de medição do lidar (cm)
+LIMIAR_SENTIDO = 0.05  # velocidade mínima (m/s) para considerar o robô em movimento
 
 # --- Perfil do túnel (a "verdade" física do teto) ---
 TETO_BASE = 200    # altura nominal do teto (cm)
@@ -52,9 +57,10 @@ class Simulador:
 
     def __init__(self):
         self.x = 0.0              # posição (m)
-        self.v = 0.0              # velocidade (m/s)
+        self.v = 0.0              # velocidade (m/s) — pode ser negativa (recuo)
         self.aceleracao_pct = 0   # último atuador recebido (-100 a 100 %)
         self.encoder = False      # estado atual do encoder
+        self.sentido = 0          # +1 avanço, -1 recuo, 0 parado
         self.ultimo_metro = 0     # último metro inteiro já contabilizado
         self.lidar = TETO_BASE    # última leitura do lidar (cm)
 
@@ -69,8 +75,17 @@ class Simulador:
         self.v += a * dt
         self.x += self.v * dt
 
-        # Encoder: troca de estado a CADA metro percorrido (em qualquer sentido).
-        metro_atual = int(math.floor(abs(self.x)))
+        # Sentido do movimento (para a odometria contar metros com o sinal correto).
+        if self.v > LIMIAR_SENTIDO:
+            self.sentido = 1
+        elif self.v < -LIMIAR_SENTIDO:
+            self.sentido = -1
+        else:
+            self.sentido = 0
+
+        # Encoder: troca de estado a CADA metro percorrido. Usa o cruzamento de um
+        # inteiro de x (em qualquer sentido), então funciona para avanço e recuo.
+        metro_atual = int(math.floor(self.x))
         if metro_atual != self.ultimo_metro:
             self.encoder = not self.encoder
             self.ultimo_metro = metro_atual
@@ -81,7 +96,7 @@ class Simulador:
 
     def leitura_sensores(self):
         """Empacota o estado dos sensores no formato do contrato."""
-        return {"encoder": self.encoder, "lidar": self.lidar}
+        return {"encoder": self.encoder, "sentido": self.sentido, "lidar": self.lidar}
 
 
 # Instância única do simulador, compartilhada com os callbacks MQTT.

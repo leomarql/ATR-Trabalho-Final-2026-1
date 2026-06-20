@@ -71,13 +71,20 @@ Substitui o `mock.cpp`: alimenta os sensores do robô com os valores gerados
 pela física + ruído de medição.
 
 ```json
-{ "encoder": false, "lidar": 200 }
+{ "encoder": false, "sentido": 1, "lidar": 200 }
 ```
 
-| Campo     | Tipo | Faixa        | Destino (variável C++) |
-|-----------|------|--------------|------------------------|
-| `encoder` | bool | true/false   | `i_encoder`            |
-| `lidar`   | int  | cm (ex. 200) | `i_lidar`              |
+| Campo     | Tipo | Faixa             | Destino (variável C++) |
+|-----------|------|-------------------|------------------------|
+| `encoder` | bool | true/false        | `i_encoder`            |
+| `sentido` | int  | -1, 0, +1         | `i_sentido`            |
+| `lidar`   | int  | cm (ex. 200)      | `i_lidar`              |
+
+O campo `sentido` indica a direção do movimento (+1 avanço, -1 recuo, 0 parado),
+análogo ao sinal que um encoder em quadratura forneceria. O encoder permanece
+**binário** (1 troca de estado por metro, conforme o enunciado); o `sentido` é a
+informação adicional que permite à odometria contar a distância com o sinal
+correto (avanço soma, recuo subtrai), viabilizando o comando `c_esquerda`.
 
 ### 3. `robo/telemetria`
 
@@ -139,12 +146,15 @@ O módulo do setpoint usado por `direita`/`esquerda` segue o último
 enviado). No modo automático, esses comandos são ignorados — quem manda é a
 lógica autônoma.
 
-> **Pendência de implementação (Fase 2/odometria):** o recuo (-X) exige suporte
-> a sentido na física e na odometria. Hoje a odometria só incrementa distância
-> (`distancia_total += 1.0`), sem noção de direção. Para `esquerda` funcionar de
-> verdade, o simulador precisa informar o sentido do movimento e a odometria
-> precisa somar **ou** subtrair conforme esse sentido. Registrar isso no
-> relatório como decisão de projeto.
+> **Decisão de projeto (recuo / sentido):** o recuo (-X) exige que a odometria
+> saiba a direção do movimento. Como um encoder binário simples não carrega
+> direção (isso exigiria um encoder em quadratura), o **simulador publica o campo
+> `sentido`** em `robo/sensores` (+1/-1/0), e a odometria soma ou subtrai 1 metro
+> por troca de estado conforme esse sinal (`distancia_total += i_sentido`). Assim
+> o encoder permanece binário (1 troca/metro) e a distância continua sendo
+> calculada a partir dele — em conformidade com o enunciado — enquanto o comando
+> `c_esquerda` passa a mover o robô para trás de fato. A velocidade estimada por
+> janela de tempo fica naturalmente negativa no recuo, sem tratamento adicional.
 
 ## Frequência de publicação
 
@@ -165,6 +175,7 @@ Checagem de que toda variável de E/S tem um caminho na rede:
 | Variável        | Tópico             | Sentido        |
 |-----------------|--------------------|----------------|
 | `i_encoder`     | `robo/sensores`    | Simulador → C++|
+| `i_sentido`     | `robo/sensores`    | Simulador → C++|
 | `i_lidar`       | `robo/sensores`    | Simulador → C++|
 | `o_liga_camera` | `robo/telemetria`  | C++ → GUIs     |
 | `o_aceleracao`  | `robo/atuadores`   | C++ → Simulador|
