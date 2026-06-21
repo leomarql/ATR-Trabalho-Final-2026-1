@@ -99,8 +99,10 @@ gravidade da rampa via feed-forward.
 
 ### 3. `robo/telemetria`
 
-Publicado pelo **C++**, assinado pela **Operação Remota** e pela **GUI da
-simulação**. É o "estado do robô" para exibição na tela.
+Publicado pelo **C++**, assinado pela **Operação Remota**, pela **Simulação
+Visual** e pela **Inspeção Visual (YOLO)** — esta última usa o campo
+`liga_camera` como gatilho da inspeção. É o "estado do robô" para exibição na
+tela e para acionar serviços.
 
 ```json
 {
@@ -216,8 +218,17 @@ Checagem de que toda variável de E/S tem um caminho na rede:
 | `i_sentido`     | `robo/sensores`    | Simulador → C++|
 | `i_imu_pitch`   | `robo/sensores`    | Simulador → C++|
 | `i_lidar`       | `robo/sensores`    | Simulador → C++|
-| `o_liga_camera` | `robo/telemetria`  | C++ → GUIs     |
+| `o_liga_camera` | `robo/telemetria`  | C++ → GUIs/YOLO|
 | `o_aceleracao`  | `robo/atuadores`   | C++ → Simulador|
+
+> **Nota sobre `o_liga_camera`.** Embora a Tabela 1 do enunciado a classifique
+> como atuador de saída (O), ela trafega no payload de `robo/telemetria` (campo
+> `liga_camera`), e não em um tópico de atuador próprio. A razão é que, ao
+> contrário de `o_aceleracao` (que o simulador físico precisa *consumir* para
+> aplicar Newton), nenhum processo precisa *atuar* sobre `o_liga_camera`: ele só
+> é observado — pelas GUIs (para exibir o estado da câmera) e pelo serviço de
+> Inspeção Visual (como gatilho do YOLO). Expô-lo junto da telemetria é, portanto,
+> o caminho de rede natural e suficiente para essa saída.
 
 **Tabela 2 (estados e comandos)**
 
