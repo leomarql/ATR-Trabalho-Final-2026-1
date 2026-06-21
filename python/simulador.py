@@ -6,7 +6,8 @@ Substitui o mock.cpp da Etapa 1. Em vez de injetar valores fixos, este script:
   2. Aplica as LEIS DE NEWTON para mover o robô (a -> v -> x), permitindo avanço
      E recuo (velocidade negativa).
   3. Gera os SENSORES e PUBLICA em robo/sensores:
-       - encoder: troca de estado a cada metro percorrido.
+       - encoder: troca de estado a cada 0,5 m percorrido (PASSO_ENCODER; o
+         enunciado sugere 1 m, frequência aumentada com autorização do professor).
        - sentido: sinal de direção do movimento (+1 avanço, -1 recuo, 0 parado),
          análogo ao que um encoder em quadratura forneceria. Permite à odometria
          contar a distância com o sinal correto (avanço soma, recuo subtrai).

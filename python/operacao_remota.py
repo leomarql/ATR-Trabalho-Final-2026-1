@@ -3,7 +3,7 @@ operacao_remota.py - Interface de Operação Remota do robô de inspeção (Tabe
 
 Painel de controle do operador humano. Faz duas coisas, conforme contrato_api.md:
   1. ASSINA  robo/telemetria -> exibe o estado do robô em tempo real
-     (posição, teto, velocidade, confiança, modo, inspeção, câmera).
+     (posição, teto, velocidade, inclinação, confiança, modo, inspeção, câmera).
   2. PUBLICA robo/comandos   -> envia os comandos do operador
      (modo auto/manual, direção, setpoint de velocidade, limiar de anomalia).
 

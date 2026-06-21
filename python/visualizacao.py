@@ -327,7 +327,7 @@ class Visualizacao:
         # --- Painel de texto (HUD) ---
         self._desenhar_hud()
 
-        # --- Teclado visual (comandos na tela + feedback de tecla pressionada) ---
+        # --- Teclado visual (comandos na tela + feedback do estado atual) ---
         self._desenhar_teclado()
 
         # --- Faixa inferior: gráfico do perfil do teto (Figura 2 do enunciado) ---

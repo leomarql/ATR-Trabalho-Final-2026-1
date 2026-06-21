@@ -16,7 +16,7 @@ ruidoso). Em vez disso, mede-se quantos metros foram percorridos nos últimos ~0
 e divide-se pelo tempo real decorrido — gerando uma velocidade estável e correta.
 Como a distância agora pode diminuir (recuo), a velocidade fica naturalmente
 negativa ao andar para trás, sem nenhum tratamento adicional. Isso NÃO altera a
-semântica do encoder (binário, 1 troca/metro) nem o cálculo da distância a partir
+semântica do encoder (binário, 1 troca por passo do encoder) nem o cálculo da distância a partir
 dele, exigidos pelo enunciado.
 
 Mede o próprio tempo de execução (WCET) para a análise de escalonabilidade.

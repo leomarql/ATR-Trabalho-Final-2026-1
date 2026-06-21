@@ -88,7 +88,9 @@ pela física + ruído de medição.
 
 O campo `sentido` indica a direção do movimento (+1 avanço, -1 recuo, 0 parado),
 análogo ao sinal que um encoder em quadratura forneceria. O encoder permanece
-**binário** (1 troca de estado por metro, conforme o enunciado); o `sentido` é a
+**binário** (1 troca de estado a cada 0,5 m — o enunciado sugere 1 m, frequência
+aumentada com autorização do professor para dobrar a resolução do mapeamento); o
+`sentido` é a
 informação adicional que permite à odometria contar a distância com o sinal
 correto (avanço soma, recuo subtrai), viabilizando o comando `c_esquerda`.
 
@@ -164,9 +166,10 @@ lógica autônoma.
 > **Decisão de projeto (recuo / sentido):** o recuo (-X) exige que a odometria
 > saiba a direção do movimento. Como um encoder binário simples não carrega
 > direção (isso exigiria um encoder em quadratura), o **simulador publica o campo
-> `sentido`** em `robo/sensores` (+1/-1/0), e a odometria soma ou subtrai 1 metro
-> por troca de estado conforme esse sinal (`distancia_total += i_sentido`). Assim
-> o encoder permanece binário (1 troca/metro) e a distância continua sendo
+> `sentido`** em `robo/sensores` (+1/-1/0), e a odometria soma ou subtrai o passo
+> do encoder (0,5 m) por troca de estado conforme esse sinal
+> (`distancia_total += i_sentido * PASSO_ENCODER`). Assim
+> o encoder permanece binário (1 troca a cada 0,5 m) e a distância continua sendo
 > calculada a partir dele — em conformidade com o enunciado — enquanto o comando
 > `c_esquerda` passa a mover o robô para trás de fato. A velocidade estimada por
 > janela de tempo fica naturalmente negativa no recuo, sem tratamento adicional.
