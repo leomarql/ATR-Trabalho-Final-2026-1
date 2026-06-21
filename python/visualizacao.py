@@ -39,6 +39,7 @@ BROKER = "localhost"
 PORTA = 1883
 TOPICO_TELEMETRIA = "robo/telemetria"
 TOPICO_INSPECAO = "robo/inspecao_visual"   # resultado do YOLO (EXTRA)
+TOPICO_COMANDOS = "robo/comandos"          # saída: comandos do operador (teclado)
 
 # --- Configuração da janela ---
 # A janela tem duas regiões empilhadas: em cima a CENA do túnel (robô andando) e
@@ -139,6 +140,7 @@ class Visualizacao:
         self.conectado = False
         self.ultima_deteccao = None  # último resultado do YOLO (dict)
         self.t_deteccao = 0          # instante (ms) da última detecção, p/ esmaecer
+        self.teclas_pressionadas = set()  # keycodes pressionados (teclado visual)
 
         # --- pygame ---
         pygame.init()
@@ -180,6 +182,50 @@ class Visualizacao:
         client.subscribe(TOPICO_TELEMETRIA)
         client.subscribe(TOPICO_INSPECAO)
         print(f"[VIS] Conectado ao broker. Assinando {TOPICO_TELEMETRIA} e {TOPICO_INSPECAO}")
+
+    def _enviar_comando(self, comando, valor):
+        """Publica um comando no MESMO tópico/formato da Operação Remota.
+        A visualização vira um segundo emissor de comandos (pelo teclado), sem
+        alterar o contrato: o C++ trata a mensagem igual à da Operação Remota."""
+        try:
+            self.client.publish(TOPICO_COMANDOS,
+                                json.dumps({"comando": comando, "valor": valor}))
+        except Exception as e:
+            print(f"[VIS] Falha ao publicar comando: {e}")
+
+    # ------------------------------------------------------------------ #
+    #  Teclado (controle manual + feedback visual)
+    # ------------------------------------------------------------------ #
+    def _tecla_baixo(self, key):
+        """Tecla pressionada: registra para o teclado visual e publica o comando.
+        Modelo 'segurar para andar': a seta inicia o movimento; ao soltar, para."""
+        self.teclas_pressionadas.add(key)
+        if key == pygame.K_LEFT:
+            self._enviar_comando("direcao", "esquerda")
+        elif key == pygame.K_RIGHT:
+            self._enviar_comando("direcao", "direita")
+        elif key in (pygame.K_SPACE, pygame.K_DOWN):
+            self._enviar_comando("direcao", "parar")
+        elif key == pygame.K_a:
+            self._enviar_comando("set_modo", "auto")
+        elif key == pygame.K_m:
+            self._enviar_comando("set_modo", "manual")
+
+    def _tecla_cima(self, key):
+        """Tecla solta: atualiza o teclado visual. Ao soltar uma seta, para o robô
+        — a menos que a seta oposta ainda esteja pressionada (segue naquela direção)."""
+        self.teclas_pressionadas.discard(key)
+        if key == pygame.K_LEFT:
+            if pygame.K_RIGHT in self.teclas_pressionadas:
+                self._enviar_comando("direcao", "direita")
+            else:
+                self._enviar_comando("direcao", "parar")
+        elif key == pygame.K_RIGHT:
+            if pygame.K_LEFT in self.teclas_pressionadas:
+                self._enviar_comando("direcao", "esquerda")
+            else:
+                self._enviar_comando("direcao", "parar")
+
 
     def _on_message(self, client, userdata, msg):
         try:
@@ -292,6 +338,9 @@ class Visualizacao:
 
         # --- Painel de texto (HUD) ---
         self._desenhar_hud()
+
+        # --- Teclado visual (comandos na tela + feedback de tecla pressionada) ---
+        self._desenhar_teclado()
 
         # --- Faixa inferior: gráfico do perfil do teto (Figura 2 do enunciado) ---
         self._desenhar_grafico(cam)
@@ -449,6 +498,44 @@ class Visualizacao:
             pygame.draw.line(self.tela, COR_REAL, (230, leg_y), (258, leg_y), 2)
             self.tela.blit(self.fonte_pq.render("teto real (simulador)", True, COR_TEXTO), (264, leg_y - 8))
 
+    def _desenhar_teclado(self):
+        """Teclado visual no canto inferior esquerdo da cena: mostra os comandos
+        disponíveis (item 7 do enunciado) e DESTACA a tecla que está sendo
+        pressionada no teclado real, dando feedback imediato ao operar o robô."""
+        PW, PH = 258, 86
+        PX, PY = 12, CENA_ALTURA - PH - 26   # acima da legenda
+
+        painel = pygame.Surface((PW, PH), pygame.SRCALPHA)
+        painel.fill((20, 24, 30, 200))
+        pygame.draw.rect(painel, COR_GRAF_EIXO, painel.get_rect(), 1)
+        self.tela.blit(painel, (PX, PY))
+        self.tela.blit(self.fonte_pq.render("Controle por teclado", True, COR_TEXTO),
+                       (PX + 10, PY + 6))
+
+        def tecla(x, y, w, h, rotulo, ativa, legenda):
+            """Desenha uma tecla; se 'ativa', acende (destaque amarelo)."""
+            cor_fundo = (236, 202, 84) if ativa else (52, 56, 66)
+            cor_borda = (255, 240, 170) if ativa else (96, 101, 116)
+            cor_txt = (24, 24, 24) if ativa else (222, 222, 226)
+            r = pygame.Rect(PX + x, PY + y, w, h)
+            pygame.draw.rect(self.tela, cor_fundo, r, border_radius=5)
+            pygame.draw.rect(self.tela, cor_borda, r, 2, border_radius=5)
+            t = self.fonte.render(rotulo, True, cor_txt)
+            self.tela.blit(t, t.get_rect(center=r.center))
+            lg = self.fonte_pq.render(legenda, True, COR_TEXTO)
+            self.tela.blit(lg, (r.centerx - lg.get_width() // 2, r.bottom + 1))
+
+        P = self.teclas_pressionadas
+        yk, h = 26, 28
+        # Grupo MODO: A (auto), M (manual)
+        tecla(8, yk, 32, h, "A", pygame.K_a in P, "auto")
+        tecla(50, yk, 32, h, "M", pygame.K_m in P, "manual")
+        # Grupo DIREÇÃO: <  espaco/parar  >
+        tecla(114, yk, 32, h, "<", pygame.K_LEFT in P, "esquerda")
+        tecla(150, yk, 58, h, "espaco",
+              (pygame.K_SPACE in P or pygame.K_DOWN in P), "parar")
+        tecla(212, yk, 32, h, ">", pygame.K_RIGHT in P, "direita")
+
     def _desenhar_grafico(self, cam):
         """Faixa inferior: gráfico do perfil do teto reconstruído (dados LIDAR
         processados), com eixos retos — X = posição (m), Y = altura do teto (cm).
@@ -526,8 +613,13 @@ class Visualizacao:
             for ev in pygame.event.get():
                 if ev.type == pygame.QUIT:
                     rodando = False
-                elif ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
-                    rodando = False
+                elif ev.type == pygame.KEYDOWN:
+                    if ev.key == pygame.K_ESCAPE:
+                        rodando = False
+                    else:
+                        self._tecla_baixo(ev.key)
+                elif ev.type == pygame.KEYUP:
+                    self._tecla_cima(ev.key)
 
             self._desenhar()
             self.relogio.tick(FPS)
