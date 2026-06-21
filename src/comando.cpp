@@ -31,7 +31,11 @@ extern MedidorWCET wcet_comando;            // medidor de tempo de execução
 // Velocidade de cruzeiro da navegação autônoma (m/s).
 // A redução durante a inspeção de anomalias é aplicada no controle (controle.cpp),
 // que limita a velocidade em qualquer modo enquanto e_inspecao está ativo.
-static constexpr double VELOCIDADE_CRUZEIRO = 5.0;
+// Ajustada para 3,5 m/s: a uma cruzeiro mais alta o robô atravessava as anomalias
+// (2-4 m) antes de terminar de desacelerar, tornando a redução quase imperceptível.
+// A 3,5 m/s a anomalia dura mais que o tempo de frenagem e a queda para a velocidade
+// de inspeção (2 m/s) fica visível, sem afetar PID, escalonabilidade ou demais módulos.
+static constexpr double VELOCIDADE_CRUZEIRO = 3.5;
 
 void callback_comando_navegacao(boost::asio::steady_timer& timer) {
     auto t0 = std::chrono::steady_clock::now();  // início da medição de WCET
