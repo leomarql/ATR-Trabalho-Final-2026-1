@@ -1,11 +1,13 @@
 /* 
 Odometria.cpp - Cálculo de Distância e Velocidade a partir do Encoder
 O que faz: Roda assincronamente a cada 20ms. 
-Lê o sensor do encoder e, conforme o enunciado, conta 1 metro percorrido a CADA
-troca de estado do encoder (0->1 ou 1->0). O SENTIDO do movimento (i_sentido,
-fornecido pelo simulador) define se o metro é somado (avanço) ou subtraído (recuo),
-permitindo o comando "esquerda" (Tabela 2) mover o robô para trás de fato.
-A cada metro, atualiza a distância, estima a velocidade, abastece o controlador PID
+Lê o sensor do encoder e conta PASSO_ENCODER metros percorridos a CADA troca de
+estado do encoder (0->1 ou 1->0). O enunciado sugere 1 m por troca, mas o professor
+autorizou frequência maior; usamos 0,5 m para dobrar a resolução do mapeamento. O
+SENTIDO do movimento (i_sentido, fornecido pelo simulador) define se a distância é
+somada (avanço) ou subtraída (recuo), permitindo o comando "esquerda" (Tabela 2)
+mover o robô para trás de fato.
+A cada troca, atualiza a distância, estima a velocidade, abastece o controlador PID
 e o Coletor, e expõe a posição X (posicao_x) para a telemetria MQTT.
 
 Estimativa de velocidade por JANELA DE TEMPO: como o encoder dá apenas 1 pulso por
@@ -48,12 +50,17 @@ void callback_odometria(boost::asio::steady_timer& timer) {
     static std::deque<std::pair<std::chrono::steady_clock::time_point, double>> janela;
     const auto JANELA_DUR = std::chrono::milliseconds(500);  // ~0,5s
 
+    // Distância (m) por troca de estado do encoder. Deve casar com o PASSO_ENCODER
+    // do simulador (python/simulador.py). O enunciado sugere 1 m, mas o professor
+    // autorizou frequência maior; usamos 0,5 m para dobrar a resolução de mapeamento.
+    const double PASSO_ENCODER = 0.5;
+
     bool estado_atual_encoder = i_encoder.load();
 
-    // Conta 1 metro a cada TROCA DE ESTADO (subida ou descida), conforme o enunciado.
-    // O sentido define o sinal: avanço soma 1 metro, recuo subtrai 1 metro.
+    // Conta PASSO_ENCODER metros a cada TROCA DE ESTADO (subida ou descida), conforme
+    // o enunciado. O sentido define o sinal: avanço soma, recuo subtrai.
     if (estado_atual_encoder != estado_anterior_encoder) {
-        distancia_total += i_sentido.load(); // +1 (frente), -1 (ré) ou 0 (parado)
+        distancia_total += i_sentido.load() * PASSO_ENCODER; // +0,5 (frente), -0,5 (ré) ou 0
     }
 
     // --- Velocidade por janela de tempo (metros percorridos / tempo decorrido) ---

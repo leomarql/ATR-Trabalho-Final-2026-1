@@ -42,6 +42,11 @@ RUIDO_LIDAR = 3.0  # desvio-padrão do ruído de medição do lidar (cm)
 LIMIAR_SENTIDO = 0.05  # velocidade mínima (m/s) para considerar o robô em movimento
 GRAVIDADE = 9.81   # aceleração da gravidade (m/s^2), para a física na rampa (EXTRA: declive)
 RUIDO_IMU = 0.2    # desvio-padrão do ruído de medição da IMU (graus)
+# Passo do encoder: distância (m) entre trocas de estado. O enunciado sugere 1 m,
+# mas o professor autorizou uma frequência maior; usamos 0,5 m para dobrar a
+# resolução do mapeamento do teto. Fica bem acima da distância por passo de física
+# (~0,25 m a 5 m/s), então nenhuma troca de estado é "pulada" entre publicações.
+PASSO_ENCODER = 0.5
 
 # --- Perfil do túnel (a "verdade" física do teto) ---
 TETO_BASE = 200    # altura nominal do teto (cm)
@@ -107,7 +112,7 @@ class Simulador:
         self.aceleracao_pct = 0   # último atuador recebido (-100 a 100 %)
         self.encoder = False      # estado atual do encoder
         self.sentido = 0          # +1 avanço, -1 recuo, 0 parado
-        self.ultimo_metro = 0     # último metro inteiro já contabilizado
+        self.ultima_marca = 0     # índice da última marca (de PASSO_ENCODER) contada
         self.lidar = TETO_BASE    # última leitura do lidar (cm)
         self.imu_pitch = 0.0      # inclinação medida pela IMU (graus)
 
@@ -137,12 +142,13 @@ class Simulador:
         else:
             self.sentido = 0
 
-        # Encoder: troca de estado a CADA metro percorrido. Usa o cruzamento de um
-        # inteiro de x (em qualquer sentido), então funciona para avanço e recuo.
-        metro_atual = int(math.floor(self.x))
-        if metro_atual != self.ultimo_metro:
+        # Encoder: troca de estado a cada PASSO_ENCODER metros percorridos. Usa o
+        # cruzamento de uma "marca" (múltiplo de PASSO_ENCODER) de x, em qualquer
+        # sentido, então funciona para avanço e recuo.
+        marca_atual = int(math.floor(self.x / PASSO_ENCODER))
+        if marca_atual != self.ultima_marca:
             self.encoder = not self.encoder
-            self.ultimo_metro = metro_atual
+            self.ultima_marca = marca_atual
 
         # Lidar: altura real do teto + ruído gaussiano de medição.
         leitura = perfil_teto(self.x) + random.gauss(0, RUIDO_LIDAR)

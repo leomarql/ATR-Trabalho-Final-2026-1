@@ -41,7 +41,13 @@ TOPICO_TELEMETRIA = "robo/telemetria"
 TOPICO_INSPECAO = "robo/inspecao_visual"   # resultado do YOLO (EXTRA)
 
 # --- Configuração da janela ---
-LARGURA, ALTURA = 960, 540
+# A janela tem duas regiões empilhadas: em cima a CENA do túnel (robô andando) e
+# embaixo uma faixa com o GRÁFICO do perfil do teto (o "gráfico de dados LIDAR
+# processados" da Figura 2 do enunciado), com eixos retos (sem a distorção da rampa).
+LARGURA = 960
+CENA_ALTURA = 540               # altura da cena do túnel (parte de cima)
+GRAFICO_ALTURA = 170            # altura da faixa do gráfico (parte de baixo)
+ALTURA = CENA_ALTURA + GRAFICO_ALTURA
 FPS = 60
 
 # --- Mapeamento mundo -> tela ---
@@ -105,6 +111,12 @@ COR_LENTE_INSP = (255, 238, 150)    # lente da câmera (brilhando na inspeção)
 COR_ROBO_INSP = (235, 90, 80)       # (mantido p/ compatibilidade)
 COR_TEXTO = (226, 226, 230)
 COR_DESTAQUE = (240, 206, 92)
+# Painel do gráfico de perfil (Figura 2)
+COR_GRAF_FUNDO = (16, 20, 28)       # fundo da faixa do gráfico
+COR_GRAF_EIXO = (90, 95, 110)       # eixos e moldura
+COR_GRAF_GRADE = (40, 44, 54)       # linhas de grade
+COR_GRAF_BASE = (70, 76, 92)        # linha do teto nominal (referência)
+COR_GRAF_ROBO = (240, 206, 92)      # marcador da posição atual do robô
 
 # --- Textura da rocha: pontos e fissuras em coordenadas do MUNDO ---
 # Gerados uma única vez (RNG com semente fixa -> determinístico, não cintila).
@@ -182,11 +194,12 @@ class Visualizacao:
             self.t_deteccao = pygame.time.get_ticks()
             return
 
-        # Telemetria: reconstrói o perfil do teto (leitura y para cada metro x).
+        # Telemetria: reconstrói o perfil do teto (leitura y por posição x).
+        # Chaveia a 0,5 m (resolução do encoder) para preservar os pontos finos.
         self.telemetria = dados
         x = dados.get("x", 0.0)
         y = dados.get("y", TETO_BASE)
-        self.perfil_medido[round(x)] = y
+        self.perfil_medido[round(x * 2) / 2.0] = y
 
     # ------------------------------------------------------------------ #
     #  Conversões mundo -> tela (com câmera que segue o robô)
@@ -251,8 +264,8 @@ class Visualizacao:
             pts_sup.append((self._tela_x(x, cam), int(y)))
             x += 0.25
         pts_chao = list(pts_sup)
-        pts_chao.append((self._tela_x(cam + METROS_VISIVEIS, cam), ALTURA))
-        pts_chao.append((self._tela_x(cam, cam), ALTURA))
+        pts_chao.append((self._tela_x(cam + METROS_VISIVEIS, cam), CENA_ALTURA))
+        pts_chao.append((self._tela_x(cam, cam), CENA_ALTURA))
         pygame.draw.polygon(self.tela, COR_CHAO, pts_chao)
         if len(pts_sup) > 1:
             pygame.draw.lines(self.tela, COR_CHAO_LINHA, False, pts_sup, 2)
@@ -280,6 +293,9 @@ class Visualizacao:
         # --- Painel de texto (HUD) ---
         self._desenhar_hud()
 
+        # --- Faixa inferior: gráfico do perfil do teto (Figura 2 do enunciado) ---
+        self._desenhar_grafico(cam)
+
         pygame.display.flip()
 
     def _desenhar_textura_rocha(self, cam):
@@ -298,7 +314,7 @@ class Visualizacao:
             else:
                 base_y = CHAO_TELA + desloc
                 sy = base_y + prof          # para dentro do chão (abaixo da superfície)
-                if sy > ALTURA - 2:
+                if sy > CENA_ALTURA - 2:
                     continue
             pygame.draw.circle(self.tela, cor, (sx, int(sy)), raio)
 
@@ -363,7 +379,7 @@ class Visualizacao:
         # --- Feixe da câmera quando inspecionando (a partir da lente, rumo ao teto) ---
         if insp:
             topo_y = self._tela_y_teto(TETO_BASE) + self._desloc_y(x_robo)
-            beam = pygame.Surface((LARGURA, ALTURA), pygame.SRCALPHA)
+            beam = pygame.Surface((LARGURA, CENA_ALTURA), pygame.SRCALPHA)
             pygame.draw.polygon(beam, (255, 226, 120, 55),
                                 [(rx + 6, ry - 44), (rx - 16, topo_y + 20),
                                  (rx + 30, topo_y + 20)])
@@ -425,13 +441,81 @@ class Visualizacao:
                 f"Modo: {modo}")
         self.tela.blit(self.fonte.render(info, True, COR_TEXTO), (12, 7))
 
-        # Legenda no rodapé
-        leg_y = ALTURA - 26
+        # Legenda no rodapé da cena (logo acima da faixa do gráfico)
+        leg_y = CENA_ALTURA - 16
         pygame.draw.line(self.tela, COR_PERFIL, (12, leg_y), (40, leg_y), 3)
         self.tela.blit(self.fonte_pq.render("perfil medido (lidar)", True, COR_TEXTO), (46, leg_y - 8))
         if TEM_GROUND_TRUTH:
             pygame.draw.line(self.tela, COR_REAL, (230, leg_y), (258, leg_y), 2)
             self.tela.blit(self.fonte_pq.render("teto real (simulador)", True, COR_TEXTO), (264, leg_y - 8))
+
+    def _desenhar_grafico(self, cam):
+        """Faixa inferior: gráfico do perfil do teto reconstruído (dados LIDAR
+        processados), com eixos retos — X = posição (m), Y = altura do teto (cm).
+        Equivale ao 'gráfico de dados LIDAR processados' da Figura 2 do enunciado.
+        Diferente do perfil verde desenhado na cena (que segue a rampa e o túnel),
+        aqui o perfil é plotado SEM distorção, como um gráfico técnico."""
+        topo = CENA_ALTURA
+        pygame.draw.rect(self.tela, COR_GRAF_FUNDO, (0, topo, LARGURA, GRAFICO_ALTURA))
+        pygame.draw.line(self.tela, COR_GRAF_EIXO, (0, topo), (LARGURA, topo), 2)
+
+        # Área de plotagem (margens internas para os rótulos dos eixos)
+        pl_x0, pl_x1 = MARGEM, LARGURA - 16
+        pl_y0, pl_y1 = topo + 26, ALTURA - 22
+        larg_pl, alt_pl = pl_x1 - pl_x0, pl_y1 - pl_y0
+
+        # Faixa de altura exibida (cm): cobre buracos (~285) e saliências (~140).
+        Y_MIN, Y_MAX = 130, 290
+
+        def y_para_tela(y_cm):
+            y_cm = max(Y_MIN, min(Y_MAX, y_cm))
+            frac = (y_cm - Y_MIN) / (Y_MAX - Y_MIN)
+            return int(pl_y1 - frac * alt_pl)   # y maior (buraco) em cima
+
+        def x_para_tela(x_m):
+            return int(pl_x0 + (x_m - cam) / METROS_VISIVEIS * larg_pl)
+
+        # Grade e rótulos do eixo Y (cm)
+        for y_cm in (150, 200, 250):
+            gy = y_para_tela(y_cm)
+            pygame.draw.line(self.tela, COR_GRAF_GRADE, (pl_x0, gy), (pl_x1, gy), 1)
+            self.tela.blit(self.fonte_pq.render(f"{y_cm}", True, COR_GRAF_EIXO), (6, gy - 8))
+        # Linha do teto nominal (200 cm) em destaque
+        gy0 = y_para_tela(TETO_BASE)
+        pygame.draw.line(self.tela, COR_GRAF_BASE, (pl_x0, gy0), (pl_x1, gy0), 1)
+
+        # Grade e rótulos do eixo X (m), a cada 5 m
+        m = int(math.ceil(cam / 5.0) * 5)
+        while m <= cam + METROS_VISIVEIS:
+            gx = x_para_tela(m)
+            pygame.draw.line(self.tela, COR_GRAF_GRADE, (gx, pl_y0), (gx, pl_y1), 1)
+            self.tela.blit(self.fonte_pq.render(f"{m}", True, COR_GRAF_EIXO), (gx - 6, pl_y1 + 4))
+            m += 5
+
+        # Moldura dos eixos
+        pygame.draw.line(self.tela, COR_GRAF_EIXO, (pl_x0, pl_y0), (pl_x0, pl_y1), 1)
+        pygame.draw.line(self.tela, COR_GRAF_EIXO, (pl_x0, pl_y1), (pl_x1, pl_y1), 1)
+
+        # Perfil medido (verde), plotado reto (X = posição, Y = altura)
+        metros = sorted(mm for mm in self.perfil_medido
+                        if cam <= mm <= cam + METROS_VISIVEIS)
+        pts = [(x_para_tela(mm), y_para_tela(self.perfil_medido[mm])) for mm in metros]
+        if len(pts) > 1:
+            pygame.draw.lines(self.tela, COR_PERFIL, False, pts, 2)
+        for p in pts:
+            pygame.draw.circle(self.tela, COR_PERFIL, p, 2)
+
+        # Marcador vertical da posição atual do robô
+        x_robo = self.telemetria.get("x", 0.0) if self.telemetria else 0.0
+        if cam <= x_robo <= cam + METROS_VISIVEIS:
+            rx = x_para_tela(x_robo)
+            pygame.draw.line(self.tela, COR_GRAF_ROBO, (rx, pl_y0), (rx, pl_y1), 1)
+
+        # Título do painel
+        titulo = self.fonte_pq.render(
+            "Gráfico de dados LIDAR processados — perfil do teto (Y, cm) × posição (X, m)",
+            True, COR_TEXTO)
+        self.tela.blit(titulo, (pl_x0, topo + 7))
 
     # ------------------------------------------------------------------ #
     #  Loop principal
