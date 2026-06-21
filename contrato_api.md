@@ -3,16 +3,21 @@
 Sistema de inspeção autônoma de túneis — Automação em Tempo Real (2026/1).
 
 Este documento é a **referência única** dos tópicos MQTT e dos formatos de
-mensagem trocados entre os três processos do sistema. Nenhum dos lados deve
-mudar tópico, nome de campo ou tipo sem atualizar este arquivo primeiro.
+mensagem trocados entre os processos do sistema. Nenhum dos lados deve mudar
+tópico, nome de campo ou tipo sem atualizar este arquivo primeiro.
 
 ## Visão geral
 
-O sistema fecha um laço entre três processos que conversam pelo broker:
+O sistema fecha um laço entre processos que conversam pelo broker. Cada um tem
+um papel bem definido:
 
 - **Robô embarcado (C++)** — dono dos **atuadores** e da **telemetria**.
 - **Simulador físico (Python)** — dono dos **sensores** (substitui o `mock.cpp`).
 - **Operação Remota (Python)** — dona dos **comandos** do operador.
+- **Simulação Visual (Python)** — assina a **telemetria** e a **inspeção visual**
+  para desenhar o túnel e o robô.
+- **Inspeção Visual / YOLO (Python, EXTRA)** — assina a **telemetria** (gatilho da
+  câmera) e publica o resultado da detecção em `robo/inspecao_visual`.
 
 Fluxo do laço fechado:
 
@@ -140,6 +145,30 @@ Formato `{comando, valor}` para acomodar comandos heterogêneos da Tabela 2.
 | `{"comando":"direcao","valor":"parar"}`           | para o robô (setpoint 0)              | `c_para`                     |
 | `{"comando":"set_limiar","valor":15}`             | escreve em `limiar_anomalia`          | limiar configurável (item 4) |
 
+#### Semântica dos comandos de direção
+
+Os comandos de direção operam sobre o **modo manual** e definem o setpoint de
+velocidade conforme o sentido:
+
+- `direcao: "direita"` → setpoint de velocidade **positivo** (avanço, +X).
+- `direcao: "esquerda"` → setpoint de velocidade **negativo** (recuo, -X).
+- `direcao: "parar"` → setpoint **0**.
+
+O módulo do setpoint usado por `direita`/`esquerda` segue o último
+`set_velocidade` recebido (padrão inicial: 5.0 m/s, caso nenhum tenha sido
+enviado). No modo automático, esses comandos são ignorados — quem manda é a
+lógica autônoma.
+
+> **Decisão de projeto (recuo / sentido):** o recuo (-X) exige que a odometria
+> saiba a direção do movimento. Como um encoder binário simples não carrega
+> direção (isso exigiria um encoder em quadratura), o **simulador publica o campo
+> `sentido`** em `robo/sensores` (+1/-1/0), e a odometria soma ou subtrai 1 metro
+> por troca de estado conforme esse sinal (`distancia_total += i_sentido`). Assim
+> o encoder permanece binário (1 troca/metro) e a distância continua sendo
+> calculada a partir dele — em conformidade com o enunciado — enquanto o comando
+> `c_esquerda` passa a mover o robô para trás de fato. A velocidade estimada por
+> janela de tempo fica naturalmente negativa no recuo, sem tratamento adicional.
+
 ### 5. `robo/inspecao_visual` (EXTRA: YOLO)
 
 Publicado pelo **serviço de inspeção visual** (`inspecao_visual.py`), assinado pela
@@ -164,30 +193,6 @@ acionada em uma anomalia (gatilho: borda de subida de `liga_camera` na telemetri
 | `n`        | int    | número de objetos detectados                         |
 | `objetos`  | lista  | cada item: `{classe (string), conf (0..1)}`          |
 | `imagem`   | string | nome do arquivo anotado salvo em `inspecao_resultados/` |
-
-#### Semântica dos comandos de direção
-
-Os comandos de direção operam sobre o **modo manual** e definem o setpoint de
-velocidade conforme o sentido:
-
-- `direcao: "direita"` → setpoint de velocidade **positivo** (avanço, +X).
-- `direcao: "esquerda"` → setpoint de velocidade **negativo** (recuo, -X).
-- `direcao: "parar"` → setpoint **0**.
-
-O módulo do setpoint usado por `direita`/`esquerda` segue o último
-`set_velocidade` recebido (padrão inicial: 5.0 m/s, caso nenhum tenha sido
-enviado). No modo automático, esses comandos são ignorados — quem manda é a
-lógica autônoma.
-
-> **Decisão de projeto (recuo / sentido):** o recuo (-X) exige que a odometria
-> saiba a direção do movimento. Como um encoder binário simples não carrega
-> direção (isso exigiria um encoder em quadratura), o **simulador publica o campo
-> `sentido`** em `robo/sensores` (+1/-1/0), e a odometria soma ou subtrai 1 metro
-> por troca de estado conforme esse sinal (`distancia_total += i_sentido`). Assim
-> o encoder permanece binário (1 troca/metro) e a distância continua sendo
-> calculada a partir dele — em conformidade com o enunciado — enquanto o comando
-> `c_esquerda` passa a mover o robô para trás de fato. A velocidade estimada por
-> janela de tempo fica naturalmente negativa no recuo, sem tratamento adicional.
 
 ## Frequência de publicação
 

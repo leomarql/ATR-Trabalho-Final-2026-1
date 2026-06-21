@@ -19,6 +19,7 @@ Requer paho-mqtt 2.x e pygame. Rodar com: python3 visualizacao.py
 import json
 import sys
 import math
+import random
 import pygame
 import paho.mqtt.client as mqtt
 
@@ -86,16 +87,37 @@ def altura_piso(x):
 
 # --- Cores ---
 COR_FUNDO = (18, 18, 24)
-COR_ROCHA = (70, 62, 55)
-COR_ROCHA_ESC = (50, 44, 38)
-COR_CHAO = (60, 55, 50)
-COR_CHAO_LINHA = (95, 86, 76)   # linha de superfície do piso (rampa)
-COR_PERFIL = (90, 200, 120)     # perfil medido (verde)
-COR_REAL = (90, 90, 110)        # teto real ao fundo (cinza)
-COR_ROBO = (80, 170, 230)
-COR_ROBO_INSP = (235, 90, 80)   # robô durante inspeção (vermelho)
-COR_TEXTO = (220, 220, 220)
-COR_DESTAQUE = (235, 200, 80)
+COR_FUNDO_TOPO = (10, 10, 16)       # gradiente de fundo (topo)
+COR_FUNDO_BASE = (30, 27, 36)       # gradiente de fundo (base)
+COR_ROCHA = (82, 71, 60)            # realce claro da rocha
+COR_ROCHA_ESC = (54, 47, 40)        # massa de rocha do teto
+COR_ROCHA_MAIS_ESC = (38, 33, 28)   # pontos escuros (textura)
+COR_ROCHA_RIM = (104, 90, 76)       # linha de superfície do teto (realce)
+COR_CHAO = (64, 56, 48)             # massa de rocha do chão
+COR_CHAO_LINHA = (112, 99, 84)      # linha de superfície do piso (rampa)
+COR_PERFIL = (95, 212, 135)         # perfil medido (verde)
+COR_REAL = (96, 96, 122)            # teto real ao fundo (cinza-azulado)
+COR_ROBO = (72, 152, 212)           # corpo do robô (azul-petróleo)
+COR_ROBO_CLARO = (124, 198, 240)    # painel superior
+COR_ROBO_ESC = (38, 92, 138)        # contorno/cabeça
+COR_LENTE = (150, 140, 92)          # lente da câmera (apagada)
+COR_LENTE_INSP = (255, 238, 150)    # lente da câmera (brilhando na inspeção)
+COR_ROBO_INSP = (235, 90, 80)       # (mantido p/ compatibilidade)
+COR_TEXTO = (226, 226, 230)
+COR_DESTAQUE = (240, 206, 92)
+
+# --- Textura da rocha: pontos e fissuras em coordenadas do MUNDO ---
+# Gerados uma única vez (RNG com semente fixa -> determinístico, não cintila).
+# Cada ponto rola e tomba junto com o túnel ao ser projetado na tela.
+_rng = random.Random(42)
+_DETALHES_ROCHA = []   # (x_mundo, profundidade_px, raio, cor, lado)
+for _ in range(320):
+    _x = _rng.uniform(0, 140)
+    _lado = "teto" if _rng.random() < 0.5 else "chao"
+    _prof = _rng.uniform(10, 130)     # distância (px) para dentro da rocha
+    _raio = _rng.randint(1, 3)
+    _cor = _rng.choice([COR_ROCHA_MAIS_ESC, COR_ROCHA_MAIS_ESC, COR_ROCHA])
+    _DETALHES_ROCHA.append((_x, _prof, _raio, _cor, _lado))
 
 
 class Visualizacao:
@@ -113,8 +135,19 @@ class Visualizacao:
         self.fonte = pygame.font.SysFont("Arial", 18)
         self.fonte_pq = pygame.font.SysFont("Arial", 14)
         self.relogio = pygame.time.Clock()
+        self.fundo = self._criar_fundo()   # gradiente pré-renderizado
 
         self._iniciar_mqtt()
+
+    def _criar_fundo(self):
+        """Pré-renderiza um gradiente vertical de fundo (feito uma vez)."""
+        fundo = pygame.Surface((LARGURA, ALTURA))
+        for y in range(ALTURA):
+            t = y / ALTURA
+            cor = tuple(int(COR_FUNDO_TOPO[i] + (COR_FUNDO_BASE[i] - COR_FUNDO_TOPO[i]) * t)
+                        for i in range(3))
+            pygame.draw.line(fundo, cor, (0, y), (LARGURA, y))
+        return fundo
 
     # ------------------------------------------------------------------ #
     #  MQTT
@@ -182,7 +215,7 @@ class Visualizacao:
     #  Desenho
     # ------------------------------------------------------------------ #
     def _desenhar(self):
-        self.tela.fill(COR_FUNDO)
+        self.tela.blit(self.fundo, (0, 0))   # fundo em gradiente (pré-renderizado)
         cam = self._camera_x()
 
         # --- Teto real ao fundo (ground truth), deslocado pela inclinação do piso ---
@@ -198,17 +231,19 @@ class Visualizacao:
 
         # --- Massa de rocha do teto (polígono do topo da tela até a linha do teto) ---
         # O teto acompanha a inclinação do piso (o túnel inteiro tomba na rampa).
-        pts_teto = [(MARGEM, 0), (LARGURA - MARGEM, 0)]
-        x = cam + METROS_VISIVEIS
-        while x >= cam:
+        pts_sup_teto = []   # linha de superfície do teto (para o realce)
+        x = cam
+        while x <= cam + METROS_VISIVEIS:
             yt = perfil_teto(x) if TEM_GROUND_TRUTH else TETO_BASE
             y = self._tela_y_teto(yt) + self._desloc_y(x)
-            pts_teto.append((self._tela_x(x, cam), int(y)))
-            x -= 0.25
+            pts_sup_teto.append((self._tela_x(x, cam), int(y)))
+            x += 0.25
+        pts_teto = [(MARGEM, 0), (LARGURA - MARGEM, 0)] + list(reversed(pts_sup_teto))
         pygame.draw.polygon(self.tela, COR_ROCHA_ESC, pts_teto)
+        if len(pts_sup_teto) > 1:   # realce na superfície do teto
+            pygame.draw.lines(self.tela, COR_ROCHA_RIM, False, pts_sup_teto, 2)
 
         # --- Chão seguindo o perfil de inclinação (a rampa visual) ---
-        # Linha de superfície do piso e massa de rocha abaixo dela.
         pts_sup = []
         x = cam
         while x <= cam + METROS_VISIVEIS:
@@ -221,6 +256,9 @@ class Visualizacao:
         pygame.draw.polygon(self.tela, COR_CHAO, pts_chao)
         if len(pts_sup) > 1:
             pygame.draw.lines(self.tela, COR_CHAO_LINHA, False, pts_sup, 2)
+
+        # --- Textura da rocha (pontos do mundo, projetados; rolam e tombam junto) ---
+        self._desenhar_textura_rocha(cam)
 
         # --- Perfil MEDIDO pelo robô (a reconstrução em tempo real) ---
         metros = sorted(m for m in self.perfil_medido
@@ -244,43 +282,94 @@ class Visualizacao:
 
         pygame.display.flip()
 
+    def _desenhar_textura_rocha(self, cam):
+        """Desenha os pontos de textura da rocha que estão visíveis, projetados
+        no teto e no chão com o mesmo deslocamento de inclinação do túnel."""
+        for x, prof, raio, cor, lado in _DETALHES_ROCHA:
+            if not (cam - 1 <= x <= cam + METROS_VISIVEIS + 1):
+                continue
+            sx = self._tela_x(x, cam)
+            desloc = self._desloc_y(x)
+            if lado == "teto":
+                base_y = self._tela_y_teto(perfil_teto(x)) + desloc
+                sy = base_y - prof          # para dentro da rocha (acima da superfície)
+                if sy < 2:
+                    continue
+            else:
+                base_y = CHAO_TELA + desloc
+                sy = base_y + prof          # para dentro do chão (abaixo da superfície)
+                if sy > ALTURA - 2:
+                    continue
+            pygame.draw.circle(self.tela, cor, (sx, int(sy)), raio)
+
     def _desenhar_robo(self, cam):
         t = self.telemetria
         x_robo = t.get("x", 0.0) if t else 0.0
         inspecao = t.get("inspecao", False) if t else False
         camera = t.get("liga_camera", False) if t else False
         pitch = t.get("inclinacao", 0.0) if t else 0.0   # graus (IMU)
+        insp = inspecao or camera
 
         rx = self._tela_x(x_robo, cam)
         ry = CHAO_TELA
 
-        cor = COR_ROBO_INSP if (inspecao or camera) else COR_ROBO
+        # --- Sombra elíptica no chão (semi-transparente; não rotaciona) ---
+        sombra = pygame.Surface((78, 18), pygame.SRCALPHA)
+        pygame.draw.ellipse(sombra, (0, 0, 0, 90), sombra.get_rect())
+        self.tela.blit(sombra, (rx - 39, ry - 6))
 
-        # Desenha o robô em uma superfície própria e a rotaciona pelo pitch (declive),
-        # de modo que o carrinho aparece inclinado na subida/descida.
-        larg, alt = 64, 52
-        surf = pygame.Surface((larg, alt), pygame.SRCALPHA)
-        cx, cy = larg // 2, alt - 14   # referência: eixo das rodas
-        pygame.draw.rect(surf, cor, (cx - 22, cy - 24, 44, 22), border_radius=4)  # corpo
-        pygame.draw.circle(surf, (30, 30, 30), (cx - 12, cy), 6)  # roda traseira
-        pygame.draw.circle(surf, (30, 30, 30), (cx + 12, cy), 6)  # roda dianteira
-        pygame.draw.rect(surf, (40, 40, 40), (cx - 5, cy - 32, 10, 8))  # câmera no topo
+        # --- Sprite do robô (desenhado em superfície própria e rotacionado) ---
+        W, H = 96, 84
+        base = H - 20                 # linha de contato das esteiras (toca o chão)
+        surf = pygame.Surface((W, H), pygame.SRCALPHA)
+        cx = W // 2
 
-        # pygame rotaciona no sentido anti-horário: pitch positivo (subida) ergue a
-        # frente (lado direito) do robô, como esperado numa rampa de subida.
+        # Esteira tipo rover (retângulo arredondado escuro + rodinhas internas)
+        pygame.draw.rect(surf, (34, 34, 40), (cx - 30, base - 4, 60, 16), border_radius=8)
+        for wx in (-19, -6, 7, 20):
+            pygame.draw.circle(surf, (88, 88, 96), (cx + wx, base + 4), 4)
+            pygame.draw.circle(surf, (18, 18, 22), (cx + wx, base + 4), 4, 1)
+
+        # Corpo arredondado (dois tons) + painel superior claro
+        corpo = pygame.Rect(cx - 27, base - 32, 54, 28)
+        pygame.draw.rect(surf, COR_ROBO, corpo, border_radius=10)
+        pygame.draw.rect(surf, COR_ROBO_ESC, corpo, 2, border_radius=10)
+        pygame.draw.rect(surf, COR_ROBO_CLARO, (cx - 21, base - 30, 42, 9), border_radius=5)
+
+        # Antena com ponta luminosa (na traseira / lado esquerdo)
+        pygame.draw.line(surf, (175, 175, 185), (cx - 18, base - 32), (cx - 18, base - 50), 2)
+        pygame.draw.circle(surf, COR_DESTAQUE, (cx - 18, base - 52), 3)
+
+        # Cabeça/sensor (na frente / lado direito) que abriga a lente
+        pygame.draw.rect(surf, COR_ROBO_ESC, (cx + 4, base - 46, 22, 20), border_radius=6)
+
+        # Lente da câmera — brilha durante a inspeção (com halo)
+        lente = (cx + 17, base - 36)
+        if insp:
+            halo = pygame.Surface((44, 44), pygame.SRCALPHA)
+            pygame.draw.circle(halo, (255, 232, 130, 95), (22, 22), 18)
+            pygame.draw.circle(halo, (255, 244, 180, 70), (22, 22), 10)
+            surf.blit(halo, (lente[0] - 22, lente[1] - 22))
+        pygame.draw.circle(surf, COR_LENTE_INSP if insp else COR_LENTE, lente, 6)
+        pygame.draw.circle(surf, (255, 255, 255), (lente[0] - 2, lente[1] - 2), 2)  # reflexo
+        pygame.draw.circle(surf, (16, 16, 20), lente, 6, 1)
+
+        # Rotaciona pelo pitch (anti-horário: subida ergue a frente) e ancora as
+        # esteiras no chão (o ponto 'base' da superfície fica em ry = CHAO_TELA).
         rot = pygame.transform.rotate(surf, pitch)
-        rect = rot.get_rect(center=(rx, ry - 14))
+        rect = rot.get_rect(center=(rx, ry + (H // 2 - base)))
         self.tela.blit(rot, rect.topleft)
 
-        # Feixe da câmera quando inspecionando
-        if inspecao or camera:
-            beam = [(rx, ry - 30), (rx - 14, self._tela_y_teto(TETO_BASE) + 20),
-                    (rx + 14, self._tela_y_teto(TETO_BASE) + 20)]
-            superficie = pygame.Surface((LARGURA, ALTURA), pygame.SRCALPHA)
-            pygame.draw.polygon(superficie, (235, 200, 80, 60), beam)
-            self.tela.blit(superficie, (0, 0))
+        # --- Feixe da câmera quando inspecionando (a partir da lente, rumo ao teto) ---
+        if insp:
+            topo_y = self._tela_y_teto(TETO_BASE) + self._desloc_y(x_robo)
+            beam = pygame.Surface((LARGURA, ALTURA), pygame.SRCALPHA)
+            pygame.draw.polygon(beam, (255, 226, 120, 55),
+                                [(rx + 6, ry - 44), (rx - 16, topo_y + 20),
+                                 (rx + 30, topo_y + 20)])
+            self.tela.blit(beam, (0, 0))
             txt = self.fonte_pq.render("INSPECIONANDO", True, COR_DESTAQUE)
-            self.tela.blit(txt, (rx - 45, ry - 60))
+            self.tela.blit(txt, (rx - 45, ry - 74))
 
     def _desenhar_painel_yolo(self):
         """Painel com o último resultado da inspeção visual por YOLO (EXTRA).
