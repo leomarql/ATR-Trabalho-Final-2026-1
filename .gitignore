@@ -71,11 +71,22 @@ Testing/
 __pycache__/
 *.pyc
 
-# Logs de execução
+# Logs de execucao
 *.csv
 log_inspecao.csv
 
-# Inspeção visual por YOLO (EXTRA)
-*.pt                          # pesos do modelo YOLO (baixados automaticamente)
-python/inspecao_resultados/   # imagens anotadas geradas nas inspeções
-python/inspecao_imagens/      # "capturas" (exemplos baixados; use as suas próprias)
+# ---------------------------------------------------------------------------
+# Inspecao visual por YOLO (EXTRA)
+# IMPORTANTE: comentarios precisam ficar em LINHAS PROPRIAS. No .gitignore um
+# '#' so inicia comentario no comeco da linha; um '#' depois do padrao vira
+# parte do padrao e o quebra (foi o que deixou estes itens subirem ao repo).
+# ---------------------------------------------------------------------------
+
+# Pesos do modelo YOLO (baixados automaticamente; ~6 MB, nao versionar)
+*.pt
+
+# "Capturas" da camera e imagens anotadas geradas em execucao.
+# Sem prefixo de pasta: casa o diretorio em qualquer lugar do repo
+# (seja na raiz ou dentro de python/).
+inspecao_imagens/
+inspecao_resultados/
