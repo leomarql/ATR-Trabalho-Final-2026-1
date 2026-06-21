@@ -34,6 +34,12 @@ void tarefa_inspecao_camera() {
         
         if (!executando.load()) break;
 
+        // Consome o gatilho JÁ (não no fim): se uma nova anomalia disparar durante o
+        // processamento pesado, o gatilho fica setado e será atendido na próxima volta,
+        // sem ser perdido. Em seguida libera o mutex para não segurá-lo no trabalho pesado.
+        gatilho_camera.store(false);
+        lock.unlock();
+
         std::cout << "\n[CAMERA] Ativada! Iniciando processamento pesado de imagem...\n";
 
         auto t0 = std::chrono::steady_clock::now();  // início da medição de WCET
@@ -55,6 +61,6 @@ void tarefa_inspecao_camera() {
         wcet_camera.registrar_desde(t0);  // fim da medição do processamento pesado
 
         std::cout << "[CAMERA] Imagem processada. CPU liberada.\n";
-        gatilho_camera.store(false);  // consome o gatilho; e_inspecao é controlado pelo lidar (região)
+        // e_inspecao e o_liga_camera são controlados pelo lidar (estado da região).
     }
 }

@@ -34,16 +34,23 @@ void callback_reconstrucao_teto(boost::asio::steady_timer& timer) {
     static int historico[5] = {200, 200, 200, 200, 200};
     static int indice = 0;
 
-    // Linha de base do teto NOMINAL (referência), congelada durante anomalias.
-    // Rastreia o teto "normal" para detectar a anomalia por toda a sua extensão.
-    static int baseline = 200;
-
     // Rastreia se já estávamos dentro de uma anomalia (para o gatilho de borda)
     static bool buraco_anterior = false;
 
+    // Altura NOMINAL do teto (cm): referência FIXA de "teto normal" do túnel, conhecida
+    // do projeto (o histórico da média móvel também é inicializado nela).
+    // Por que fixa, e não uma linha de base adaptativa: uma baseline que se atualiza
+    // sofria de dois problemas que ligavam a câmera em teto normal — (a) DERIVA: a
+    // atualização incremental (EMA) escorregava lentamente para baixo, até o ruído do
+    // teto normal cruzar o limiar; e (b) TRAVAMENTO: como a baseline só se atualizava
+    // fora de anomalias, qualquer falso positivo a congelava, tornando-se permanente.
+    // Como o teto nominal do túnel é constante (anomalias são desvios dele, e a rampa
+    // NÃO altera a leitura do teto), a referência fixa é a opção robusta e correta.
+    const int TETO_NOMINAL = 200;
+
     int leitura_atual = i_lidar.load();
 
-    // 1. Média Móvel
+    // 1. Média Móvel (reduz o ruído de medição do lidar)
     historico[indice] = leitura_atual;
     indice = (indice + 1) % 5;
 
@@ -51,19 +58,11 @@ void callback_reconstrucao_teto(boost::asio::steady_timer& timer) {
     for(int i = 0; i < 5; i++) soma += historico[i];
     int media_movel = soma / 5;
 
-    // 2. Detecção de Anomalia por REGIÃO (limiar configurável pela Operação Remota).
-    // Compara o teto suavizado com a LINHA DE BASE nominal — não com a média móvel.
-    // (Comparar com a média móvel só detectava as BORDAS: ao ficar dentro do buraco,
-    //  a média alcançava o valor da anomalia e o desvio zerava, "perdendo" a falha;
-    //  e disparava de novo na saída. Com a linha de base, a anomalia é detectada por
-    //  toda a sua extensão e a câmera fica ligada enquanto o robô a atravessa.)
-    bool buraco_atual = std::abs(media_movel - baseline) > limiar_anomalia.load();
-
-    // Atualiza a linha de base lentamente apenas FORA de anomalias (EMA), para que
-    // ela NÃO derive para dentro do buraco/saliência — mantendo a detecção da região.
-    if (!buraco_atual) {
-        baseline = (baseline * 15 + media_movel) / 16;
-    }
+    // 2. Detecção de Anomalia por REGIÃO: desvio do teto suavizado em relação ao teto
+    //    NOMINAL fixo (não à média móvel). Assim a anomalia é detectada por TODA a sua
+    //    extensão (câmera ligada durante toda a travessia) e o teto normal nunca dispara,
+    //    inclusive após rampas. (Comparar com a média móvel só detectava as BORDAS.)
+    bool buraco_atual = std::abs(media_movel - TETO_NOMINAL) > limiar_anomalia.load();
 
     // ESTADO SUSTENTADO: enquanto dentro da anomalia, mantém a câmera ligada e a
     // inspeção ativa (velocidade limitada). Acompanha a região a cada ciclo.
@@ -72,8 +71,13 @@ void callback_reconstrucao_teto(boost::asio::steady_timer& timer) {
 
     // GATILHO ÚNICO do processamento pesado da câmera: só na ENTRADA da anomalia
     // (borda de subida), para não enfileirar trabalho pesado a cada 100ms.
+    // O gatilho é setado SOB o mutex da câmera para fechar a janela de "lost wakeup"
+    // (garante que a câmera não durma logo após o notify sem ver o gatilho).
     if (buraco_atual == true && buraco_anterior == false) {
-        gatilho_camera.store(true);
+        {
+            std::lock_guard<std::mutex> lk(mtx_camera);
+            gatilho_camera.store(true);
+        }
         cv_camera.notify_one();       // acorda a câmera UMA vez, no início da anomalia
     }
 

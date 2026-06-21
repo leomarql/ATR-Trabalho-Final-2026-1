@@ -106,18 +106,24 @@ public:
                     limiar_anomalia.store(j.value("valor", 10));
                 }
                 else if (cmd == "direcao") {
-                    std::string v = j.value("valor", std::string("parar"));
-                    if (v == "direita") {
-                        j_sp_velocidade.store(modulo_manual_);
-                        freio_ativo.store(false);   // solta o freio e anda (avanço)
-                    }
-                    else if (v == "esquerda") {
-                        j_sp_velocidade.store(-modulo_manual_);
-                        freio_ativo.store(false);   // solta o freio e anda (recuo)
-                    }
-                    else if (v == "parar") {
-                        j_sp_velocidade.store(0.0);
-                        freio_ativo.store(true);    // FREIO: parada firme
+                    // Comandos de direção só valem no modo MANUAL. No automático são
+                    // ignorados (quem manda é a lógica autônoma), conforme contrato_api.md.
+                    // Sem este guard, "parar" no automático acionaria o freio e deixaria
+                    // o robô preso parado, contrariando o comportamento documentado.
+                    if (!e_automatico.load()) {
+                        std::string v = j.value("valor", std::string("parar"));
+                        if (v == "direita") {
+                            j_sp_velocidade.store(modulo_manual_);
+                            freio_ativo.store(false);   // solta o freio e anda (avanço)
+                        }
+                        else if (v == "esquerda") {
+                            j_sp_velocidade.store(-modulo_manual_);
+                            freio_ativo.store(false);   // solta o freio e anda (recuo)
+                        }
+                        else if (v == "parar") {
+                            j_sp_velocidade.store(0.0);
+                            freio_ativo.store(true);    // FREIO: parada firme
+                        }
                     }
                 }
             }

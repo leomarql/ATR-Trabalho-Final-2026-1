@@ -626,6 +626,8 @@ class Visualizacao:
     # ------------------------------------------------------------------ #
     def executar(self):
         rodando = True
+        # Evento de perda de foco da janela (pode não existir em pygame antigo).
+        EVT_FOCO_PERDIDO = getattr(pygame, "WINDOWFOCUSLOST", None)
         while rodando:
             for ev in pygame.event.get():
                 if ev.type == pygame.QUIT:
@@ -637,6 +639,15 @@ class Visualizacao:
                         self._tecla_baixo(ev.key)
                 elif ev.type == pygame.KEYUP:
                     self._tecla_cima(ev.key)
+                elif EVT_FOCO_PERDIDO is not None and ev.type == EVT_FOCO_PERDIDO:
+                    # A janela perdeu o foco: se uma seta estava pressionada, o KEYUP
+                    # nunca chegaria e o robô andaria "sozinho". Para o robô por
+                    # segurança e limpa o teclado visual.
+                    movendo = (pygame.K_LEFT in self.teclas_pressionadas or
+                               pygame.K_RIGHT in self.teclas_pressionadas)
+                    self.teclas_pressionadas.clear()
+                    if movendo:
+                        self._enviar_comando("direcao", "parar")
 
             self._desenhar()
             self.relogio.tick(FPS)
