@@ -34,6 +34,7 @@ std::atomic<double> velocidade_atual{0.0};
 std::atomic<int> o_aceleracao{0};
 std::atomic<int> i_lidar{200}; 
 std::atomic<bool> e_inspecao{false};
+std::atomic<bool> gatilho_camera{false}; // gatilho ÚNICO do processamento da câmera (borda de entrada na anomalia)
 std::atomic<int> limiar_anomalia{10};    // configurável pela Operação Remota
 std::atomic<bool> o_liga_camera{false};  // atuador da câmera (Tabela 1)
 std::atomic<double> posicao_x{0.0};      // posição X exposta pela odometria p/ telemetria

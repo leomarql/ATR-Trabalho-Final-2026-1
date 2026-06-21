@@ -25,6 +25,7 @@ extern std::mutex mtx_camera;
 extern std::condition_variable cv_camera;
 extern std::atomic<int> limiar_anomalia;   // configurável pela Operação Remota (Etapa 2)
 extern std::atomic<bool> o_liga_camera;     // atuador da câmera (Tabela 1)
+extern std::atomic<bool> gatilho_camera;    // gatilho ÚNICO do processamento pesado da câmera
 extern MedidorWCET wcet_lidar;              // medidor de tempo de execução
 
 void callback_reconstrucao_teto(boost::asio::steady_timer& timer) {
@@ -33,7 +34,11 @@ void callback_reconstrucao_teto(boost::asio::steady_timer& timer) {
     static int historico[5] = {200, 200, 200, 200, 200};
     static int indice = 0;
 
-    // Rastreia se já estamos dentro de um buraco (lógica de borda)
+    // Linha de base do teto NOMINAL (referência), congelada durante anomalias.
+    // Rastreia o teto "normal" para detectar a anomalia por toda a sua extensão.
+    static int baseline = 200;
+
+    // Rastreia se já estávamos dentro de uma anomalia (para o gatilho de borda)
     static bool buraco_anterior = false;
 
     int leitura_atual = i_lidar.load();
@@ -46,19 +51,30 @@ void callback_reconstrucao_teto(boost::asio::steady_timer& timer) {
     for(int i = 0; i < 5; i++) soma += historico[i];
     int media_movel = soma / 5;
 
-    // 2. Detecção de Anomalia (limiar configurável pela Operação Remota)
-    bool buraco_atual = std::abs(leitura_atual - media_movel) > limiar_anomalia.load();
+    // 2. Detecção de Anomalia por REGIÃO (limiar configurável pela Operação Remota).
+    // Compara o teto suavizado com a LINHA DE BASE nominal — não com a média móvel.
+    // (Comparar com a média móvel só detectava as BORDAS: ao ficar dentro do buraco,
+    //  a média alcançava o valor da anomalia e o desvio zerava, "perdendo" a falha;
+    //  e disparava de novo na saída. Com a linha de base, a anomalia é detectada por
+    //  toda a sua extensão e a câmera fica ligada enquanto o robô a atravessa.)
+    bool buraco_atual = std::abs(media_movel - baseline) > limiar_anomalia.load();
 
-    // LÓGICA DE BORDA: Só acorda a câmera na transição de Falso -> Verdadeiro
-    if (buraco_atual == true && buraco_anterior == false) {
-        e_inspecao.store(true);
-        o_liga_camera.store(true);    // liga o atuador da câmera
-        cv_camera.notify_one();       // grita APENAS UMA VEZ no início do buraco
+    // Atualiza a linha de base lentamente apenas FORA de anomalias (EMA), para que
+    // ela NÃO derive para dentro do buraco/saliência — mantendo a detecção da região.
+    if (!buraco_atual) {
+        baseline = (baseline * 15 + media_movel) / 16;
     }
-    // Quando o robô sair do buraco, abaixa as flags para estar pronto para o próximo
-    else if (buraco_atual == false && buraco_anterior == true) {
-        e_inspecao.store(false);
-        o_liga_camera.store(false);   // desliga o atuador da câmera
+
+    // ESTADO SUSTENTADO: enquanto dentro da anomalia, mantém a câmera ligada e a
+    // inspeção ativa (velocidade limitada). Acompanha a região a cada ciclo.
+    e_inspecao.store(buraco_atual);
+    o_liga_camera.store(buraco_atual);
+
+    // GATILHO ÚNICO do processamento pesado da câmera: só na ENTRADA da anomalia
+    // (borda de subida), para não enfileirar trabalho pesado a cada 100ms.
+    if (buraco_atual == true && buraco_anterior == false) {
+        gatilho_camera.store(true);
+        cv_camera.notify_one();       // acorda a câmera UMA vez, no início da anomalia
     }
 
     buraco_anterior = buraco_atual; // Salva o estado para o próximo ciclo (100ms)

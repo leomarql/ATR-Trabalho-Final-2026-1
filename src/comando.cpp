@@ -1,14 +1,13 @@
 /*
 comando.cpp - Tarefa de Comando de Navegação
 O que faz: Roda assincronamente a cada 200ms.
-Decide o setpoint de velocidade (j_sp_velocidade) conforme o modo de operação e o
-estado de inspeção.
+Decide o setpoint de velocidade (j_sp_velocidade) conforme o modo de operação.
 
-  - Modo AUTOMÁTICO: a lógica autônoma define o setpoint. Em operação normal usa a
-    velocidade de cruzeiro; durante a inspeção de uma anomalia (e_inspecao ativo),
-    reduz para a velocidade de inspeção, fazendo o robô "andar mais devagar"
-    enquanto a câmera analisa a falha (Tarefa 4 do enunciado e estado e_inspecao
-    da Tabela 2: "navegando com velocidade limitada").
+  - Modo AUTOMÁTICO: a lógica autônoma define o setpoint na velocidade de cruzeiro.
+    O "andar mais devagar" durante a inspeção de uma anomalia (Tarefa 4 do enunciado)
+    NÃO é feito aqui: é o controle (controle.cpp) que limita a velocidade enquanto
+    e_inspecao está ativo, de modo que a redução valha tanto no automático quanto no
+    manual (estado e_inspecao da Tabela 2: "navegando com velocidade limitada").
   - Modo MANUAL: NÃO sobrescreve o setpoint. Quem controla é o operador, via os
     comandos de direção (direita/esquerda/parar) recebidos pela ponte MQTT, que
     escrevem diretamente em j_sp_velocidade. Se esta tarefa zerasse o setpoint a
@@ -26,26 +25,23 @@ Mede o próprio tempo de execução (WCET) para a análise de escalonabilidade.
 
 // Variáveis Globais (Nascem no main.cpp)
 extern std::atomic<bool> e_automatico;
-extern std::atomic<bool> e_inspecao;        // anomalia em inspeção -> velocidade limitada
 extern std::atomic<double> j_sp_velocidade;
 extern MedidorWCET wcet_comando;            // medidor de tempo de execução
 
-// Velocidades de navegação autônoma (m/s)
-static constexpr double VELOCIDADE_CRUZEIRO = 5.0;  // operação normal
-static constexpr double VELOCIDADE_INSPECAO = 2.0;  // reduzida durante a inspeção
+// Velocidade de cruzeiro da navegação autônoma (m/s).
+// A redução durante a inspeção de anomalias é aplicada no controle (controle.cpp),
+// que limita a velocidade em qualquer modo enquanto e_inspecao está ativo.
+static constexpr double VELOCIDADE_CRUZEIRO = 5.0;
 
 void callback_comando_navegacao(boost::asio::steady_timer& timer) {
     auto t0 = std::chrono::steady_clock::now();  // início da medição de WCET
 
-    // Modo automático: velocidade de cruzeiro, reduzida durante a inspeção de uma
-    // anomalia (o robô anda mais devagar para a câmera analisar a falha).
-    // Modo manual: não toca no setpoint (controlado pelos comandos de direção via MQTT).
+    // Modo AUTOMÁTICO: define a velocidade de cruzeiro. O "andar mais devagar" na
+    // inspeção (Tarefa 4) é feito pelo controle, que limita a velocidade quando
+    // e_inspecao está ativo — assim vale tanto no automático quanto no manual.
+    // Modo MANUAL: NÃO toca no setpoint (controlado pelos comandos de direção via MQTT).
     if (e_automatico.load() == true) {
-        if (e_inspecao.load() == true) {
-            j_sp_velocidade.store(VELOCIDADE_INSPECAO);
-        } else {
-            j_sp_velocidade.store(VELOCIDADE_CRUZEIRO);
-        }
+        j_sp_velocidade.store(VELOCIDADE_CRUZEIRO);
     }
 
     wcet_comando.registrar_desde(t0);  // fim da medição (antes de reagendar)

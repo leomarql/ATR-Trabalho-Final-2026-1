@@ -499,42 +499,59 @@ class Visualizacao:
             self.tela.blit(self.fonte_pq.render("teto real (simulador)", True, COR_TEXTO), (264, leg_y - 8))
 
     def _desenhar_teclado(self):
-        """Teclado visual no canto inferior esquerdo da cena: mostra os comandos
+        """Teclado visual (canto inferior direito da cena): mostra os comandos
         disponíveis (item 7 do enunciado) e DESTACA a tecla que está sendo
         pressionada no teclado real, dando feedback imediato ao operar o robô."""
-        PW, PH = 258, 86
-        PX, PY = 12, CENA_ALTURA - PH - 26   # acima da legenda
+        PW, PH = 264, 96
+        PX, PY = LARGURA - PW - 14, CENA_ALTURA - PH - 20  # canto inferior direito
 
+        # Sombra do painel (profundidade) + painel arredondado semitransparente
+        sombra = pygame.Surface((PW + 8, PH + 8), pygame.SRCALPHA)
+        pygame.draw.rect(sombra, (0, 0, 0, 90), sombra.get_rect(), border_radius=10)
+        self.tela.blit(sombra, (PX - 2, PY))
         painel = pygame.Surface((PW, PH), pygame.SRCALPHA)
-        painel.fill((20, 24, 30, 200))
-        pygame.draw.rect(painel, COR_GRAF_EIXO, painel.get_rect(), 1)
+        pygame.draw.rect(painel, (22, 26, 33, 222), painel.get_rect(), border_radius=10)
+        pygame.draw.rect(painel, (70, 76, 92), painel.get_rect(), 1, border_radius=10)
         self.tela.blit(painel, (PX, PY))
+
+        # Título e rótulos de grupo
         self.tela.blit(self.fonte_pq.render("Controle por teclado", True, COR_TEXTO),
-                       (PX + 10, PY + 6))
+                       (PX + 12, PY + 7))
+        self.tela.blit(self.fonte_pq.render("MODO", True, COR_GRAF_EIXO), (PX + 14, PY + 26))
+        self.tela.blit(self.fonte_pq.render("DIREÇÃO", True, COR_GRAF_EIXO), (PX + 124, PY + 26))
 
         def tecla(x, y, w, h, rotulo, ativa, legenda):
-            """Desenha uma tecla; se 'ativa', acende (destaque amarelo)."""
-            cor_fundo = (236, 202, 84) if ativa else (52, 56, 66)
-            cor_borda = (255, 240, 170) if ativa else (96, 101, 116)
-            cor_txt = (24, 24, 24) if ativa else (222, 222, 226)
-            r = pygame.Rect(PX + x, PY + y, w, h)
-            pygame.draw.rect(self.tela, cor_fundo, r, border_radius=5)
-            pygame.draw.rect(self.tela, cor_borda, r, 2, border_radius=5)
+            """Desenha uma tecla com leve efeito 3D; se 'ativa', acende (âmbar)."""
+            r = pygame.Rect(PX + x, PY + y + (1 if ativa else 0), w, h)  # 'afunda' ao apertar
+            if ativa:
+                # halo de brilho atrás da tecla pressionada
+                halo = pygame.Surface((w + 14, h + 14), pygame.SRCALPHA)
+                pygame.draw.rect(halo, (240, 206, 92, 70), halo.get_rect(), border_radius=8)
+                self.tela.blit(halo, (r.x - 7, r.y - 7))
+                cor_fundo, cor_borda, cor_txt = (240, 206, 92), (255, 244, 180), (26, 26, 26)
+            else:
+                cor_fundo, cor_borda, cor_txt = (54, 59, 70), (98, 104, 120), (224, 224, 228)
+            pygame.draw.rect(self.tela, cor_fundo, r, border_radius=6)
+            # brilho superior (efeito de relevo) quando não pressionada
+            if not ativa:
+                pygame.draw.line(self.tela, (78, 84, 100), (r.x + 4, r.y + 2),
+                                 (r.right - 4, r.y + 2), 1)
+            pygame.draw.rect(self.tela, cor_borda, r, 2, border_radius=6)
             t = self.fonte.render(rotulo, True, cor_txt)
             self.tela.blit(t, t.get_rect(center=r.center))
             lg = self.fonte_pq.render(legenda, True, COR_TEXTO)
-            self.tela.blit(lg, (r.centerx - lg.get_width() // 2, r.bottom + 1))
+            self.tela.blit(lg, (PX + x + w // 2 - lg.get_width() // 2, PY + y + h + 2))
 
         P = self.teclas_pressionadas
-        yk, h = 26, 28
+        yk, h = 40, 28
         # Grupo MODO: A (auto), M (manual)
-        tecla(8, yk, 32, h, "A", pygame.K_a in P, "auto")
-        tecla(50, yk, 32, h, "M", pygame.K_m in P, "manual")
-        # Grupo DIREÇÃO: <  espaco/parar  >
-        tecla(114, yk, 32, h, "<", pygame.K_LEFT in P, "esquerda")
-        tecla(150, yk, 58, h, "espaco",
+        tecla(10, yk, 32, h, "A", pygame.K_a in P, "auto")
+        tecla(52, yk, 32, h, "M", pygame.K_m in P, "manual")
+        # Grupo DIREÇÃO: <  espaço/parar  >
+        tecla(120, yk, 30, h, "<", pygame.K_LEFT in P, "esquerda")
+        tecla(156, yk, 58, h, "espaço",
               (pygame.K_SPACE in P or pygame.K_DOWN in P), "parar")
-        tecla(212, yk, 32, h, ">", pygame.K_RIGHT in P, "direita")
+        tecla(220, yk, 30, h, ">", pygame.K_RIGHT in P, "direita")
 
     def _desenhar_grafico(self, cam):
         """Faixa inferior: gráfico do perfil do teto reconstruído (dados LIDAR

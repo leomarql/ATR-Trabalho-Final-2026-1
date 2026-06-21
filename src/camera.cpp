@@ -17,7 +17,7 @@ thread nativa dedicada — por isso não entra no conjunto periódico Rate Monot
 #include <condition_variable>
 #include "Profiler.hpp"
 
-extern std::atomic<bool> e_inspecao;
+extern std::atomic<bool> gatilho_camera;  // gatilho ÚNICO disparado pelo lidar na entrada da anomalia
 extern std::atomic<bool> executando;
 extern std::mutex mtx_camera;
 extern std::condition_variable cv_camera;
@@ -27,8 +27,10 @@ void tarefa_inspecao_camera() {
     while(executando.load()) {
         std::unique_lock<std::mutex> lock(mtx_camera);
         
-        // Dorme esperando o Lidar (ou o comando de desligar)
-        cv_camera.wait(lock, []{ return e_inspecao.load() == true || !executando.load(); });
+        // Dorme esperando o GATILHO do Lidar (ou o comando de desligar).
+        // O gatilho é único por anomalia, então a câmera roda o processamento
+        // pesado UMA vez por falha, sem enfileirar trabalho a cada ciclo do lidar.
+        cv_camera.wait(lock, []{ return gatilho_camera.load() == true || !executando.load(); });
         
         if (!executando.load()) break;
 
@@ -53,6 +55,6 @@ void tarefa_inspecao_camera() {
         wcet_camera.registrar_desde(t0);  // fim da medição do processamento pesado
 
         std::cout << "[CAMERA] Imagem processada. CPU liberada.\n";
-        e_inspecao.store(false); 
+        gatilho_camera.store(false);  // consome o gatilho; e_inspecao é controlado pelo lidar (região)
     }
 }

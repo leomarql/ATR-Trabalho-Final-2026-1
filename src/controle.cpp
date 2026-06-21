@@ -31,8 +31,15 @@ extern std::atomic<double> j_sp_velocidade;
 extern std::atomic<double> velocidade_atual;
 extern std::atomic<int> o_aceleracao;
 extern std::atomic<bool> freio_ativo;     // parada firme (comando "parar")
+extern std::atomic<bool> e_inspecao;      // inspeção de anomalia -> velocidade limitada
 extern std::atomic<double> i_imu_pitch;   // inclinação medida pela IMU (graus)
 extern MedidorWCET wcet_controle;         // medidor de tempo de execução
+
+// Velocidade máxima (módulo, m/s) permitida durante a inspeção de uma anomalia.
+// Aplica-se em QUALQUER modo (automático ou manual): o estado e_inspecao significa
+// "robô navegando com velocidade limitada" (Tabela 2). Faz o robô "andar mais
+// devagar" para a câmera analisar a falha, conforme a Tarefa 4 do enunciado.
+static constexpr double VELOCIDADE_INSPECAO = 2.0;
 
 void callback_controle_navegacao(boost::asio::steady_timer& timer) {
     auto t0 = std::chrono::steady_clock::now();  // início da medição de WCET
@@ -61,6 +68,14 @@ void callback_controle_navegacao(boost::asio::steady_timer& timer) {
         // 1. Leitura do Setpoint e Variável de Processo
         double sp = j_sp_velocidade.load();
         double pv = velocidade_atual.load();
+
+        // Limite de inspeção (Tarefa 4): durante a inspeção de uma anomalia, limita
+        // o MÓDULO da velocidade a VELOCIDADE_INSPECAO, preservando a direção. Vale
+        // para os dois modos — no automático reduz a cruzeiro; no manual, mesmo que o
+        // operador peça mais, o robô anda devagar para a câmera inspecionar a falha.
+        if (e_inspecao.load() && std::fabs(sp) > VELOCIDADE_INSPECAO) {
+            sp = (sp >= 0.0 ? VELOCIDADE_INSPECAO : -VELOCIDADE_INSPECAO);
+        }
 
         // 2. Matemática do PID
         double erro = sp - pv;
