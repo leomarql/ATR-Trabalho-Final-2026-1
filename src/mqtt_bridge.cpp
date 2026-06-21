@@ -8,7 +8,7 @@ Responsabilidades (conforme contrato_api.md):
   - ASSINA  robo/sensores  -> escreve i_encoder, i_sentido, i_lidar, i_imu_pitch
   - ASSINA  robo/comandos  -> escreve e_automatico, j_sp_velocidade, limiar_anomalia, freio_ativo
   - PUBLICA robo/atuadores -> le o_aceleracao
-  - PUBLICA robo/telemetria-> le posicao_x, i_lidar, confianca, velocidade, modo, inclinacao, etc.
+  - PUBLICA robo/telemetria-> le posicao_x, teto_filtrado (média móvel), confianca, velocidade, modo, inclinacao, etc.
 
 A comunicação com o resto do sistema é feita exclusivamente pelas variáveis
 atômicas globais, sem mutex e sem tocar nos callbacks do Asio.
@@ -34,6 +34,7 @@ extern std::atomic<double> j_sp_velocidade;
 extern std::atomic<double> velocidade_atual;
 extern std::atomic<int>    o_aceleracao;
 extern std::atomic<int>    i_lidar;
+extern std::atomic<int>    teto_filtrado;  // teto PROCESSADO (média móvel) p/ telemetria
 extern std::atomic<bool>   e_inspecao;
 extern std::atomic<int>    limiar_anomalia;
 extern std::atomic<bool>   o_liga_camera;
@@ -159,7 +160,7 @@ void tarefa_mqtt_bridge() {
         try {
             json tele;
             tele["x"]           = posicao_x.load();
-            tele["y"]           = i_lidar.load();
+            tele["y"]           = teto_filtrado.load();   // teto PROCESSADO (média móvel), igual ao CSV
             tele["confianca"]   = confianca_atual.load();
             tele["velocidade"]  = velocidade_atual.load();
             tele["modo"]        = e_automatico.load() ? "auto" : "manual";

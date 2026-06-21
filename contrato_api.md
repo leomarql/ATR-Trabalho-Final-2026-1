@@ -122,7 +122,7 @@ tela e para acionar serviços.
 | Campo         | Tipo   | Faixa/valores      | Origem (variável C++)        |
 |---------------|--------|--------------------|------------------------------|
 | `x`           | double | metros             | posição da odometria         |
-| `y`           | int    | cm                 | leitura do teto (`i_lidar`)  |
+| `y`           | int    | cm                 | teto processado (média móvel) |
 | `confianca`   | int    | 0 a 100            | calculada no coletor         |
 | `velocidade`  | double | m/s                | `velocidade_atual`           |
 | `modo`        | string | `"auto"`/`"manual"`| `e_automatico`               |
@@ -201,8 +201,8 @@ acionada em uma anomalia (gatilho: borda de subida de `liga_camera` na telemetri
 
 ## Frequência de publicação
 
-- **`robo/telemetria`** — publicada a cada novo registro do coletor (ou seja, a
-  cada leitura do lidar consumida, ~100 ms).
+- **`robo/telemetria`** — publicada pela ponte MQTT em cadência fixa de ~100 ms
+  (mesma ordem de grandeza do ciclo do lidar, que consome cada leitura ~100 ms).
 - **`robo/sensores`** — publicada na cadência do passo de integração da física
   do simulador.
 - **`robo/atuadores`** — publicada quando `o_aceleracao` muda (ou em cadência

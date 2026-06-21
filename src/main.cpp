@@ -33,6 +33,7 @@ std::atomic<double> j_sp_velocidade{5.0};
 std::atomic<double> velocidade_atual{0.0};
 std::atomic<int> o_aceleracao{0};
 std::atomic<int> i_lidar{200}; 
+std::atomic<int> teto_filtrado{200};     // teto PROCESSADO (média móvel do lidar) p/ telemetria/Figura 2
 std::atomic<bool> e_inspecao{false};
 std::atomic<bool> gatilho_camera{false}; // gatilho ÚNICO do processamento da câmera (borda de entrada na anomalia)
 std::atomic<int> limiar_anomalia{10};    // configurável pela Operação Remota

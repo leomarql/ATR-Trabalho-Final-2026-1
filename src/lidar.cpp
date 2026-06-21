@@ -1,6 +1,6 @@
 /*
 lidar.cpp - Implementação do módulo de processamento de dados do LIDAR.
-O que faz: Este módulo é responsável por ler os dados do LIDAR, processá-los para detectar buracos e enviar as informações relevantes para a câmera.
+O que faz: Este módulo é responsável por ler os dados do LIDAR, processá-los para detectar anomalias (buracos e saliências) e enviar as informações relevantes para a câmera.
 Ele utiliza uma média móvel para suavizar as leituras e implementa uma lógica de borda para acordar a câmera apenas quando um buraco é detectado pela primeira vez.
 O limiar de detecção de anomalia é configurável pela Operação Remota (variável atômica limiar_anomalia).
 Ao detectar uma anomalia, aciona o atuador da câmera (o_liga_camera) e sinaliza a tarefa de inspeção.
@@ -19,6 +19,7 @@ Mede o próprio tempo de execução (WCET) para a análise de escalonabilidade.
 #include "Profiler.hpp"
 
 extern std::atomic<int> i_lidar;
+extern std::atomic<int> teto_filtrado;      // teto PROCESSADO (média móvel) exposto p/ telemetria
 extern std::atomic<bool> e_inspecao;
 extern BufferCompartilhado<int> buffer_lidar_coletor;
 extern std::mutex mtx_camera;
@@ -57,6 +58,11 @@ void callback_reconstrucao_teto(boost::asio::steady_timer& timer) {
     int soma = 0;
     for(int i = 0; i < 5; i++) soma += historico[i];
     int media_movel = soma / 5;
+
+    // Expõe o teto PROCESSADO (média móvel) para a telemetria: é o mesmo valor
+    // suavizado que vai ao coletor/CSV, mantendo telemetria, log e visualização
+    // coerentes e fiéis ao "gráfico de dados LIDAR processados" da Figura 2.
+    teto_filtrado.store(media_movel);
 
     // 2. Detecção de Anomalia por REGIÃO: desvio do teto suavizado em relação ao teto
     //    NOMINAL fixo (não à média móvel). Assim a anomalia é detectada por TODA a sua

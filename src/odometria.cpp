@@ -10,10 +10,11 @@ mover o robô para trás de fato.
 A cada troca, atualiza a distância, estima a velocidade, abastece o controlador PID
 e o Coletor, e expõe a posição X (posicao_x) para a telemetria MQTT.
 
-Estimativa de velocidade por JANELA DE TEMPO: como o encoder dá apenas 1 pulso por
-metro, derivar a distância a cada ciclo de 20ms produz um sinal "0 ou 50" (muito
-ruidoso). Em vez disso, mede-se quantos metros foram percorridos nos últimos ~0,5s
-e divide-se pelo tempo real decorrido — gerando uma velocidade estável e correta.
+Estimativa de velocidade por JANELA DE TEMPO: como o encoder só muda de estado a
+cada passo (0,5 m), derivar a distância a cada ciclo de 20ms produziria picos
+("0 ou um valor alto", ex.: 0,5 m / 0,02 s = 25 m/s) muito ruidosos. Em vez disso,
+mede-se quantos metros foram percorridos nos últimos ~0,5s e divide-se pelo tempo
+real decorrido — gerando uma velocidade estável e correta.
 Como a distância agora pode diminuir (recuo), a velocidade fica naturalmente
 negativa ao andar para trás, sem nenhum tratamento adicional. Isso NÃO altera a
 semântica do encoder (binário, 1 troca por passo do encoder) nem o cálculo da distância a partir

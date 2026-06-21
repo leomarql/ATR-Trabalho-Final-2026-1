@@ -109,7 +109,7 @@ Gera dois executáveis em `build/`: `robo_embarcado` (sistema principal) e
 
 ### Sistema completo (recomendado) — launcher único
 
-Sobe broker, robô, simulador e as duas GUIs de uma vez. Encerra tudo com Ctrl+C:
+Sobe broker, robô, simulador, as duas GUIs e a inspeção visual YOLO de uma vez. Encerra tudo com Ctrl+C:
 
 ```bash
 ./iniciar.sh
