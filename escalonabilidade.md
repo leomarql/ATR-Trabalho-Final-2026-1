@@ -24,7 +24,10 @@ multithread.
 
 Os dados foram coletados em três execuções independentes do sistema completo em
 modo online (robô + simulador físico via MQTT), sob carga real, incluindo os
-disparos da câmera nas anomalias do túnel.
+disparos da câmera nas anomalias do túnel. Inicialmente o robô permaneceu em modo
+automático durante 10 segundos. Em seguida foram executadas transições para o modo
+manual, incluindo comandos de movimentação para direita, esquerda e parada, com 
+espera de 2 segundos entre comandos.
 
 ## 3. WCET medidos
 
@@ -33,19 +36,19 @@ valor observado** entre as rodadas (critério conservador).
 
 | Tarefa     | Período T (µs) | WCET rod. 1 (µs) | WCET rod. 2 (µs) | WCET rod. 3 (µs) | WCET adotado (µs) | Média típica (µs) |
 |------------|----------------|------------------|------------------|------------------|-------------------|-------------------|
-| Odometria  | 20 000         | 578,2            | 361,0            | 178,2            | **578,2**         | ~2,5              |
-| Controle   | 80 000         | 24,6             | 53,8             | 25,6             | **53,8**          | ~0,5              |
-| Lidar      | 100 000        | 371,4            | 169,4            | 146,9            | **371,4**         | ~22,6             |
-| Comando    | 200 000        | 24,3             | 13,3             | 41,0             | **41,0**          | ~0,4              |
-| Câmera*    | (evento)       | 1 268 405        | 1 018 395        | 1 171 890        | **~1 268 405**    | ~1 100 000        |
+| Odometria  | 20 000         | 254,4            | 220,9            | 387,7            | **387,7**         | ~10,5             |
+| Controle   | 80 000         | 49,7             | 335,3            | 37,4             | **335,3**         | ~2,7              |
+| Lidar      | 100 000        | 1272,0           | 5811,8           | 2444,3           | **5811,8**        | ~53,5             |
+| Comando    | 200 000        | 3,1              | 3,0              | 3,8              | **3,8**           | ~0,4              |
+| Câmera*    | (evento)       | 2 870 914        | 2 767 995        | 2 412 232        | **~2 870 914**    | ~2 183 763        |
 
 \* A câmera é uma tarefa **orientada a evento** (não periódica), executada em
 thread nativa dedicada. Não integra o conjunto periódico analisado por Rate
 Monotonic; está listada apenas para evidenciar sua magnitude.
 
 **Observação sobre WCET vs. média.** Há uma diferença grande entre o WCET e a
-média de cada tarefa periódica (ex.: odometria com média ~2,5 µs e pico de
-578 µs). Essa diferença não vem da tarefa, e sim do sistema operacional de
+média de cada tarefa periódica (ex.: Lidar com média ~53,5 µs e pico de
+5811,8 µs). Essa diferença não vem da tarefa, e sim do sistema operacional de
 propósito geral (Linux/WSL): preempção, troca de contexto e *cache misses*
 ocasionais inflam o pior caso medido. Justamente por isso a análise de
 escalonabilidade adota o pior caso, mais conservador, e não a média.
@@ -57,13 +60,13 @@ periódico é U = Σ Uᵢ. Usando os WCET adotados:
 
 | Tarefa    | Cᵢ (µs) | Tᵢ (µs) | Uᵢ = Cᵢ/Tᵢ |
 |-----------|---------|---------|------------|
-| Odometria | 578,2   | 20 000  | 0,02891    |
-| Controle  | 53,8    | 80 000  | 0,00067    |
-| Lidar     | 371,4   | 100 000 | 0,00371    |
-| Comando   | 41,0    | 200 000 | 0,00021    |
-| **Total** |         |         | **≈ 0,0335** |
+| Odometria | 387,7   | 20 000  | 0,01938    |
+| Controle  | 335,3   | 80 000  | 0,00419    |
+| Lidar     | 5811,8  | 100 000 | 0,05812    |
+| Comando   | 3,8     | 200 000 | 0,00002    |
+| **Total** |         |         | **≈ 0,08171** |
 
-A utilização total do conjunto periódico é de aproximadamente **3,35% da
+A utilização total do conjunto periódico é de aproximadamente **8,17% da
 capacidade de um núcleo**. O sistema está muito longe da saturação.
 
 ## 5. Teste de escalonabilidade — Rate Monotonic (RM)
@@ -77,8 +80,8 @@ Para n = 4 tarefas periódicas:
 
 > U_limite = 4 · (2^(1/4) − 1) ≈ 4 · (1,1892 − 1) ≈ **0,757**
 
-Como U ≈ 0,0335 ≪ 0,757, o conjunto é **escalonável por Rate Monotonic com folga
-de mais de 20×**. Por ser um teste *suficiente* (não necessário), aprovar com tal
+Como U ≈ 0,08171 ≪ 0,757, o conjunto é **escalonável por Rate Monotonic com folga
+de quase 10×**. Por ser um teste *suficiente* (não necessário), aprovar com tal
 margem encerra a questão da viabilidade — não é necessário recorrer à Análise de
 Tempo de Resposta exata (RTA) para confirmar.
 
@@ -88,23 +91,23 @@ A pergunta do enunciado é qual o menor período que ainda garante
 escalonabilidade. Há dois limites a considerar.
 
 **Limite por utilização agregada.** Escalando todos os períodos por um mesmo
-fator k (preservando as proporções), a utilização vira U(k) = 0,0335 / k.
+fator k (preservando as proporções), a utilização vira U(k) = 0,08171 / k.
 Igualando ao limite RM:
 
-> 0,0335 / k = 0,757  ⟹  k ≈ 0,044
+> 0,08171 / k = 0,757  ⟹  k ≈ 0,1079
 
-Ou seja, todos os períodos poderiam ser reduzidos a ~4,4% dos atuais e o conjunto
-ainda passaria no teste RM. Isso levaria a odometria de 20 ms para ~0,9 ms.
+Ou seja, todos os períodos poderiam ser reduzidos a ~10,79% dos atuais e o conjunto
+ainda passaria no teste RM. Isso levaria a Lidar de 100 ms para ~10,79 ms.
 
 **Limite por execução individual (o gargalo real).** A condição mínima é
 Cᵢ < Tᵢ: nenhuma tarefa pode ter período menor que o próprio tempo de execução.
-O caso mais restritivo é a odometria, cujo WCET adotado é 578 µs; seu período não
-pode ser inferior a ~600 µs sob pena de o tempo de execução não caber em um ciclo.
+O caso mais restritivo é a Lidar, cujo WCET adotado é 5811,8 µs; seu período não
+pode ser inferior a ~6000 µs sob pena de o tempo de execução não caber em um ciclo.
 
 **Conclusão.** O menor período viável **não é limitado pela utilização agregada**
 (que oferece folga enorme), e sim pelo **WCET da tarefa individual mais carregada
-em relação ao seu período**. Para a configuração atual, a odometria impõe o piso
-prático em torno de ~0,6–0,9 ms.
+em relação ao seu período**. Para a configuração atual, a Lidar impõe o piso
+prático em torno de ~6 ms.
 
 ## 7. Ressalva sobre o modelo de execução (monocore vs. multicore)
 
@@ -119,18 +122,18 @@ escalonável tende a m (e não a 1).
 
 Esta ressalva é intelectualmente honesta e relevante: o limite Rate Monotonic
 monocore é o **caso mais conservador** (mais restritivo). Como o sistema passa
-nele com folga superior a 20×, passa com folga ainda maior no modelo multicore
+nele com folga de quase 10×, passa com folga ainda maior no modelo multicore
 real em que de fato roda. A conclusão de escalonabilidade, portanto, é robusta
 nos dois modelos.
 
 ## 8. Tarefas não periódicas (câmera e coletor)
 
-A câmera (WCET ≈ 1,27 s) e o coletor de dados são tarefas **orientadas a evento**,
+A câmera (WCET ≈ 2,87 s), a ponte MQTT e o coletor de dados são tarefas **orientadas a evento**,
 executadas em threads nativas dedicadas, e por isso **não integram** o conjunto
 periódico Rate Monotonic.
 
 A magnitude da câmera evidencia a razão de projeto para essa separação: com
-~1,27 segundo de processamento (multiplicação de matrizes O(N³)), se a câmera
+~2,87 segundo de processamento (multiplicação de matrizes O(N³)), se a câmera
 fosse uma tarefa periódica no mesmo núcleo das tarefas de tempo real, estouraria
 qualquer deadline e inviabilizaria a previsibilidade das tarefas rápidas.
 Isolá-la em uma thread nativa, dentro de um pool de 4 núcleos, permite ao sistema
@@ -140,10 +143,11 @@ para I/O e processamento pesado garantem.
 
 ## 9. Síntese
 
-O conjunto periódico utiliza ~3,35% de um núcleo e passa no teste de Rate
-Monotonic (limite ~0,757) com folga superior a 20×. O menor período viável é
-limitado pelo WCET da tarefa individual (a odometria, ~0,6 ms), não pela
+O conjunto periódico utiliza ~8,17% de um núcleo e passa no teste de Rate
+Monotonic (limite ~0,757) com folga de quase 10x. O menor período viável é
+limitado pelo WCET da tarefa individual (a Lidar, ~6 ms), não pela
 utilização agregada. A análise monocore é o caso conservador; o sistema, que roda
 em um pool multicore, é escalonável com margem ainda maior. A separação da câmera
-(~1,27 s) e do coletor em threads nativas dedicadas é o que preserva a
+(~2,87 s) e do coletor em threads nativas dedicadas é o que preserva a
 previsibilidade das tarefas de tempo real.
+
